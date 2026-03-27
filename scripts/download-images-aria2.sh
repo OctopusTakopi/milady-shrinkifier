@@ -3,7 +3,7 @@ set -euo pipefail
 
 mkdir -p cache/milady-maker
 
-seq 1 10000 | awk -v dir="$PWD/cache/milady-maker" '{
+seq 0 9999 | awk -v dir="$PWD/cache/milady-maker" '{
   printf "https://www.miladymaker.net/milady/%d.png\n out=%d.png\n dir=%s\n", $1, $1, dir
 }' > cache/milady-maker.aria2.txt
 

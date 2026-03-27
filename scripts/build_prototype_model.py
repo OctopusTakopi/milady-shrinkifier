@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -8,7 +9,7 @@ import onnx
 from onnx import TensorProto, helper, numpy_helper
 from PIL import Image, ImageEnhance
 
-TOTAL_TOKENS = 10_000
+TOTAL_TOKENS = int(os.environ.get("MILADY_TOKEN_COUNT", "10000"))
 SAMPLE_SIZE = 256
 FEATURE_SIZE = 32 * 32
 IMAGE_DIR = Path("cache/milady-maker")
@@ -22,11 +23,16 @@ def main() -> None:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     META_DIR.mkdir(parents=True, exist_ok=True)
 
-    token_ids = np.linspace(1, TOTAL_TOKENS, num=SAMPLE_SIZE, dtype=int)
+    token_ids = available_token_ids()
+    if len(token_ids) == 0:
+        raise RuntimeError("no readable Milady images found in cache/milady-maker")
+
+    sample_size = min(SAMPLE_SIZE, len(token_ids))
+    sampled_ids = [token_ids[index] for index in np.linspace(0, len(token_ids) - 1, num=sample_size, dtype=int)]
     prototypes = []
     positive_scores = []
 
-    for token_id in token_ids:
+    for token_id in sampled_ids:
         vector = load_vector(token_id)
         prototypes.append(vector)
         positive_scores.append(max(float(np.dot(vector, other)) for other in prototypes))
@@ -104,6 +110,16 @@ def now_iso() -> str:
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat()
+
+
+def available_token_ids() -> list[int]:
+    token_ids: list[int] = []
+    for token_id in range(TOTAL_TOKENS):
+        path = IMAGE_DIR / f"{token_id}.png"
+        if not path.exists() or path.stat().st_size == 0:
+            continue
+        token_ids.append(token_id)
+    return token_ids
 
 
 if __name__ == "__main__":

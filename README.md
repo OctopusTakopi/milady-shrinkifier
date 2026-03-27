@@ -16,5 +16,6 @@ Chrome extension that detects X/Twitter posts from accounts using a Milady Maker
 ## Notes
 
 - Downloaded source images live under `cache/milady-maker/` and are ignored by Git.
+- The Milady token/image range is `0..9999`; the pipeline skips unreadable local files instead of crashing.
 - Generated runtime assets land in `public/generated/` and `public/models/`.
 - The extension currently targets Milady Maker only, but the data pipeline is structured so more collections can be added later.

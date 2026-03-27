@@ -16,6 +16,7 @@ export interface HashDatabase {
   algorithm: string;
   generatedAt: string;
   hashes: HashEntry[];
+  skippedTokenIds?: number[];
 }
 
 export interface ModelMetadata {
