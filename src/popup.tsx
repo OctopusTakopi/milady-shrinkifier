@@ -328,11 +328,11 @@ function App() {
     sortedAccounts().filter((account) => !settings().whitelistHandles.includes(account.handle)),
   );
   const matchRateLabel = createMemo(() => {
-    const checked = stats().avatarsChecked;
-    if (checked <= 0) {
+    const seen = stats().tweetsScanned;
+    if (seen <= 0) {
       return "0%";
     }
-    const rate = (stats().postsMatched / checked) * 100;
+    const rate = (stats().postsMatched / seen) * 100;
     return `${rate.toFixed(rate >= 10 ? 1 : 2)}%`;
   });
   const totalAvatarSightings = createMemo(() =>
@@ -487,7 +487,7 @@ function App() {
             </div>
             <dl class="stats-grid">
               <div><dt>Posts seen</dt><dd>{formatNumber(stats().tweetsScanned)}</dd></div>
-              <div><dt>Posts detected</dt><dd>{formatNumber(stats().postsMatched)}</dd></div>
+              <div><dt>Posts matched</dt><dd>{formatNumber(stats().postsMatched)}</dd></div>
               <div><dt>Match rate</dt><dd>{matchRateLabel()}</dd></div>
               <div><dt>Whitelisted</dt><dd>{formatNumber(whitelistedAccounts().length)}</dd></div>
               <div><dt>Errors</dt><dd>{formatNumber(stats().errors)}</dd></div>
