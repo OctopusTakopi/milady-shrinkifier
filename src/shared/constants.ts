@@ -1,7 +1,18 @@
-import type { ExtensionSettings } from "./types";
+import type { DetectionStats, ExtensionSettings } from "./types";
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   mode: "off",
+};
+
+export const DEFAULT_STATS: DetectionStats = {
+  tweetsScanned: 0,
+  avatarsChecked: 0,
+  cacheHits: 0,
+  postsMatched: 0,
+  phashMatches: 0,
+  onnxMatches: 0,
+  errors: 0,
+  lastMatchAt: null,
 };
 
 export const HASH_MATCH_THRESHOLD = 8;

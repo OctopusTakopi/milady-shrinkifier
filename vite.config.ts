@@ -9,11 +9,11 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     target: "es2022",
+    minify: false,
+    sourcemap: true,
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "popup.html"),
-        content: resolve(__dirname, "src/content.ts"),
-        worker: resolve(__dirname, "src/worker.ts"),
       },
       output: {
         entryFileNames: "[name].js",

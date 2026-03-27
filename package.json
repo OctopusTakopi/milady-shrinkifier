@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "pnpm run build:app && pnpm run build:worker && pnpm run build:content",
+    "build:app": "vite build",
+    "build:worker": "esbuild src/worker.ts --bundle --format=iife --platform=browser --target=es2022 --sourcemap --outfile=dist/worker.js",
+    "build:content": "esbuild src/content.ts --bundle --format=iife --platform=browser --target=es2022 --sourcemap --outfile=dist/content.js",
     "dev": "vite build --watch",
     "download:images": "tsx scripts/download-images.ts",
     "download:images:aria2": "zsh scripts/download-images-aria2.sh",
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@types/chrome": "^0.1.29",
     "@types/node": "^24.10.1",
+    "esbuild": "^0.27.0",
     "jsdom": "^27.2.0",
     "sharp": "^0.34.5",
     "tsx": "^4.20.6",

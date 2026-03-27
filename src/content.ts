@@ -16,8 +16,9 @@ import {
   findBestCandidate,
   normalizeProfileImageUrl,
 } from "./shared/image-core";
-import { loadSettings } from "./shared/storage";
+import { loadSettings, loadStats, saveStats } from "./shared/storage";
 import type {
+  DetectionStats,
   DetectionResult,
   ExtensionSettings,
   HashDatabase,
@@ -27,6 +28,7 @@ import type {
 
 const STYLE_ID = "milady-shrinkifier-style";
 const ARTICLE_SELECTOR = 'article[data-testid="tweet"]';
+const SCALE_FACTOR = 0.5;
 const cache = new Map<string, Promise<DetectionResult>>();
 const processed = new WeakMap<HTMLElement, string>();
 const placeholders = new WeakMap<HTMLElement, HTMLDivElement>();
@@ -37,12 +39,14 @@ let modelMetadataPromise: Promise<ModelMetadata> | null = null;
 let workerPromise: Promise<Worker> | null = null;
 let pendingWorker = new Map<string, (score: number) => void>();
 let scanScheduled = false;
+let stats: DetectionStats | null = null;
+let statsWriteScheduled = false;
 
 void boot();
 
 async function boot(): Promise<void> {
   injectStyles();
-  settings = await loadSettings();
+  [settings, stats] = await Promise.all([loadSettings(), loadStats()]);
   observeStorage();
   const observer = new MutationObserver(() => {
     scheduleProcessVisibleTweets();
@@ -84,9 +88,11 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
   }
 
   processed.set(tweet, normalizedUrl);
+  incrementStat("tweetsScanned");
   const result = await detectAvatar(avatar, normalizedUrl);
   if (result.matched) {
     tweet.dataset.miladyShrinkifier = result.source ?? "match";
+    incrementMatchStats(result);
     applyMode(tweet);
     return;
   }
@@ -98,6 +104,7 @@ async function processTweet(tweet: HTMLElement): Promise<void> {
 async function detectAvatar(image: HTMLImageElement, normalizedUrl: string): Promise<DetectionResult> {
   const cached = cache.get(normalizedUrl);
   if (cached) {
+    incrementStat("cacheHits");
     return cached;
   }
 
@@ -107,39 +114,51 @@ async function detectAvatar(image: HTMLImageElement, normalizedUrl: string): Pro
 }
 
 async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: string): Promise<DetectionResult> {
-  const database = await loadHashDatabase();
-  const runtimeImage = await loadCorsImage(normalizedUrl);
-  const features = await computeBrowserImageFeatures(runtimeImage);
-  const candidate = findBestCandidate(features.hash, features.averageColor, database.hashes);
-  const distance = candidate.distance;
-  const averageColorDistance = colorDistance(features.averageColor, candidate.entry.averageColor);
+  incrementStat("avatarsChecked");
+  try {
+    const database = await loadHashDatabase();
+    const runtimeImage = await loadCorsImage(normalizedUrl);
+    const features = await computeBrowserImageFeatures(runtimeImage);
+    const candidate = findBestCandidate(features.hash, features.averageColor, database.hashes);
+    const distance = candidate.distance;
+    const averageColorDistance = colorDistance(features.averageColor, candidate.entry.averageColor);
 
-  if (distance <= HASH_MATCH_THRESHOLD && averageColorDistance <= COLOR_DISTANCE_THRESHOLD) {
+    if (distance <= HASH_MATCH_THRESHOLD && averageColorDistance <= COLOR_DISTANCE_THRESHOLD) {
+      return {
+        matched: true,
+        source: "phash",
+        score: distance,
+        tokenId: candidate.entry.tokenId,
+      };
+    }
+
+    if (distance > HASH_ONNX_THRESHOLD) {
+      return {
+        matched: false,
+        source: null,
+        score: distance,
+        tokenId: null,
+      };
+    }
+
+    const score = await scoreWithOnnx(features.modelFeatures, normalizedUrl);
+    const metadata = await loadModelMetadata();
     return {
-      matched: true,
-      source: "phash",
-      score: distance,
-      tokenId: candidate.entry.tokenId,
+      matched: score >= metadata.threshold,
+      source: score >= metadata.threshold ? "onnx" : null,
+      score,
+      tokenId: score >= metadata.threshold ? candidate.entry.tokenId : null,
     };
-  }
-
-  if (distance > HASH_ONNX_THRESHOLD) {
+  } catch (error) {
+    console.error("Milady detection failed", error);
+    incrementStat("errors");
     return {
       matched: false,
       source: null,
-      score: distance,
+      score: null,
       tokenId: null,
     };
   }
-
-  const score = await scoreWithOnnx(features.modelFeatures, normalizedUrl);
-  const metadata = await loadModelMetadata();
-  return {
-    matched: score >= metadata.threshold,
-    source: score >= metadata.threshold ? "onnx" : null,
-    score,
-    tokenId: score >= metadata.threshold ? candidate.entry.tokenId : null,
-  };
 }
 
 function findAvatar(tweet: HTMLElement): HTMLImageElement | null {
@@ -155,7 +174,7 @@ function applyMode(tweet: HTMLElement): void {
       return;
     case "scale":
       clearPlaceholder(tweet);
-      tweet.classList.add("milady-shrinkifier-scale");
+      applyScaledState(tweet);
       tweet.style.display = "";
       return;
     case "fade":
@@ -178,6 +197,15 @@ function clearEffects(tweet: HTMLElement): void {
 
 function clearVisualClasses(tweet: HTMLElement): void {
   tweet.classList.remove("milady-shrinkifier-scale", "milady-shrinkifier-fade");
+  tweet.style.height = "";
+  tweet.style.overflow = "";
+}
+
+function applyScaledState(tweet: HTMLElement): void {
+  const fullHeight = Math.max(tweet.scrollHeight, tweet.getBoundingClientRect().height);
+  tweet.classList.add("milady-shrinkifier-scale");
+  tweet.style.height = `${Math.ceil(fullHeight * SCALE_FACTOR)}px`;
+  tweet.style.overflow = "hidden";
 }
 
 function applyHiddenState(tweet: HTMLElement): void {
@@ -222,8 +250,9 @@ function injectStyles(): void {
   style.id = STYLE_ID;
   style.textContent = `
     .milady-shrinkifier-scale {
-      zoom: 0.5;
+      transform: scale(0.5);
       transform-origin: top left;
+      will-change: transform;
     }
 
     .milady-shrinkifier-fade {
@@ -259,13 +288,17 @@ function injectStyles(): void {
 
 function observeStorage(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "sync" || !changes.mode) {
+    if (area === "sync" && changes.mode) {
+      settings = {
+        mode: isFilterMode(changes.mode.newValue) ? changes.mode.newValue : DEFAULT_SETTINGS.mode,
+      };
+      scheduleProcessVisibleTweets();
       return;
     }
-    settings = {
-      mode: isFilterMode(changes.mode.newValue) ? changes.mode.newValue : DEFAULT_SETTINGS.mode,
-    };
-    scheduleProcessVisibleTweets();
+
+    if (area === "local" && changes.stats) {
+      stats = normalizeStats(changes.stats.newValue);
+    }
   });
 }
 
@@ -299,7 +332,13 @@ async function getWorker(): Promise<Worker> {
   }
 
   workerPromise = Promise.resolve().then(() => {
-    const worker = new Worker(chrome.runtime.getURL("worker.js"), { type: "module" });
+    const bootstrapUrl = URL.createObjectURL(
+      new Blob([`importScripts(${JSON.stringify(chrome.runtime.getURL("worker.js"))});`], {
+        type: "text/javascript",
+      }),
+    );
+    const worker = new Worker(bootstrapUrl);
+    URL.revokeObjectURL(bootstrapUrl);
     worker.addEventListener("message", (event: MessageEvent<WorkerResponse>) => {
       const resolver = pendingWorker.get(event.data.id);
       if (!resolver) {
@@ -310,6 +349,7 @@ async function getWorker(): Promise<Worker> {
     });
     worker.postMessage({
       modelUrl: chrome.runtime.getURL(MODEL_URL),
+      wasmPath: chrome.runtime.getURL("ort/"),
     });
     return worker;
   });
@@ -331,4 +371,76 @@ async function scoreWithOnnx(features: number[], seed: string): Promise<number> 
 
 function isFilterMode(value: unknown): value is ExtensionSettings["mode"] {
   return value === "off" || value === "hide" || value === "scale" || value === "fade";
+}
+
+function incrementMatchStats(result: DetectionResult): void {
+  incrementStat("postsMatched");
+  if (result.source === "phash") {
+    incrementStat("phashMatches");
+  }
+  if (result.source === "onnx") {
+    incrementStat("onnxMatches");
+  }
+  if (!stats) {
+    return;
+  }
+  stats.lastMatchAt = new Date().toISOString();
+  scheduleStatsWrite();
+}
+
+function incrementStat(key: keyof Omit<DetectionStats, "lastMatchAt">): void {
+  if (!stats) {
+    return;
+  }
+  stats[key] += 1;
+  scheduleStatsWrite();
+}
+
+function scheduleStatsWrite(): void {
+  if (statsWriteScheduled || !stats) {
+    return;
+  }
+  statsWriteScheduled = true;
+  window.setTimeout(async () => {
+    statsWriteScheduled = false;
+    if (!stats) {
+      return;
+    }
+    await saveStats(stats);
+  }, 250);
+}
+
+function normalizeStats(value: unknown): DetectionStats {
+  if (!value || typeof value !== "object") {
+    return emptyStats();
+  }
+
+  const candidate = value as Partial<DetectionStats>;
+  return {
+    tweetsScanned: readNumber(candidate.tweetsScanned),
+    avatarsChecked: readNumber(candidate.avatarsChecked),
+    cacheHits: readNumber(candidate.cacheHits),
+    postsMatched: readNumber(candidate.postsMatched),
+    phashMatches: readNumber(candidate.phashMatches),
+    onnxMatches: readNumber(candidate.onnxMatches),
+    errors: readNumber(candidate.errors),
+    lastMatchAt: typeof candidate.lastMatchAt === "string" ? candidate.lastMatchAt : null,
+  };
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function emptyStats(): DetectionStats {
+  return {
+    tweetsScanned: 0,
+    avatarsChecked: 0,
+    cacheHits: 0,
+    postsMatched: 0,
+    phashMatches: 0,
+    onnxMatches: 0,
+    errors: 0,
+    lastMatchAt: null,
+  };
 }

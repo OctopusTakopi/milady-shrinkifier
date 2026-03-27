@@ -4,6 +4,7 @@ import type { WorkerRequest, WorkerResponse } from "./shared/types";
 
 interface InitMessage {
   modelUrl: string;
+  wasmPath: string;
 }
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
@@ -12,7 +13,7 @@ self.addEventListener("message", async (event: MessageEvent<InitMessage | Worker
   const data = event.data;
 
   if ("modelUrl" in data) {
-    ort.env.wasm.wasmPaths = `${new URL("../ort/", self.location.href).toString()}`;
+    ort.env.wasm.wasmPaths = data.wasmPath;
     sessionPromise = ort.InferenceSession.create(data.modelUrl, {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all",

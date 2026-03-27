@@ -4,6 +4,17 @@ export interface ExtensionSettings {
   mode: FilterMode;
 }
 
+export interface DetectionStats {
+  tweetsScanned: number;
+  avatarsChecked: number;
+  cacheHits: number;
+  postsMatched: number;
+  phashMatches: number;
+  onnxMatches: number;
+  errors: number;
+  lastMatchAt: string | null;
+}
+
 export interface HashEntry {
   tokenId: number;
   variant: string;

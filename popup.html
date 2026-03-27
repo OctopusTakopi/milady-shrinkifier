@@ -16,6 +16,22 @@
         <label><input type="radio" name="mode" value="scale" /> Scale to 50%</label>
         <label><input type="radio" name="mode" value="fade" /> Fade to 50%</label>
       </form>
+      <section class="stats" aria-labelledby="stats-heading">
+        <div class="stats-header">
+          <h2 id="stats-heading">Session Stats</h2>
+          <button id="reset-stats" type="button">Reset</button>
+        </div>
+        <dl class="stats-grid">
+          <div><dt>Tweets scanned</dt><dd data-stat="tweetsScanned">0</dd></div>
+          <div><dt>Avatars checked</dt><dd data-stat="avatarsChecked">0</dd></div>
+          <div><dt>Cache hits</dt><dd data-stat="cacheHits">0</dd></div>
+          <div><dt>Posts matched</dt><dd data-stat="postsMatched">0</dd></div>
+          <div><dt>pHash hits</dt><dd data-stat="phashMatches">0</dd></div>
+          <div><dt>ONNX hits</dt><dd data-stat="onnxMatches">0</dd></div>
+          <div><dt>Errors</dt><dd data-stat="errors">0</dd></div>
+          <div><dt>Last hit</dt><dd data-stat="lastMatchAt">Never</dd></div>
+        </dl>
+      </section>
       <p class="footnote">Detection runs locally from a generated Milady Maker reference set.</p>
     </main>
   </body>
