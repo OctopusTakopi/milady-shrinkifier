@@ -16,6 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_ROOT = PROJECT_ROOT / "cache"
 EXPORT_ROOT = CACHE_ROOT / "exports" / "raw"
 AVATAR_ROOT = CACHE_ROOT / "avatars" / "files"
+DERIVATIVE_ROOT = CACHE_ROOT / "derivatives"
+DERIVATIVE_MANIFEST_PATH = DERIVATIVE_ROOT / "manifest.json"
 DATASET_ROOT = CACHE_ROOT / "dataset"
 SPLIT_ROOT = DATASET_ROOT / "splits"
 MODEL_RUN_ROOT = CACHE_ROOT / "models" / "mobilenet_v3_small"
@@ -101,6 +103,7 @@ def now_iso() -> str:
 def ensure_layout() -> None:
     EXPORT_ROOT.mkdir(parents=True, exist_ok=True)
     AVATAR_ROOT.mkdir(parents=True, exist_ok=True)
+    DERIVATIVE_ROOT.mkdir(parents=True, exist_ok=True)
     DATASET_ROOT.mkdir(parents=True, exist_ok=True)
     SPLIT_ROOT.mkdir(parents=True, exist_ok=True)
     MODEL_RUN_ROOT.mkdir(parents=True, exist_ok=True)

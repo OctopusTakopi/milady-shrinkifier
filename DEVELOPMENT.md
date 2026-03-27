@@ -56,6 +56,7 @@ Typical loop:
 uv run milady ingest-avatars cache/milady-shrinkifier-avatars-<timestamp>.json
 uv run milady download-avatars
 uv run milady download-avatars --retry-failed
+uv run milady download-derivatives
 uv run milady label-heuristic
 uv run milady review
 uv run milady build-dataset
