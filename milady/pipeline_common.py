@@ -28,6 +28,7 @@ OFFICIAL_IMAGE_ROOT = CACHE_ROOT / "milady-maker"
 REVIEW_QUEUES = (
     "unlabeled",
     "heuristic_matches",
+    "heuristic_reviewed",
     "whitelisted",
     "high_seen_count",
     "notification_group",
@@ -464,6 +465,16 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
         return sorted(
             (item for item in items if item.heuristic_match and item.label is None),
             key=lambda item: item.seen_count,
+            reverse=True,
+        )
+
+    if queue_name == "heuristic_reviewed":
+        return sorted(
+            (item for item in items if item.heuristic_match and item.label is not None),
+            key=lambda item: (
+                item.seen_count,
+                item.labeled_at or "",
+            ),
             reverse=True,
         )
 

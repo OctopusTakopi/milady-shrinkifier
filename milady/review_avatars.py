@@ -751,6 +751,16 @@ INDEX_HTML = """<!doctype html>
       let selectedBatchIndex = 0;
       let activeView = "individual";
       const batchLabelOrder = ["not_milady", "milady", "unclear"];
+      const queueLabels = {
+        unlabeled: "Unlabeled",
+        heuristic_matches: "Heuristic review",
+        heuristic_reviewed: "Heuristic labeled",
+        whitelisted: "Whitelisted",
+        high_seen_count: "High seen count",
+        notification_group: "Notification group",
+        high_score_unlabeled: "High-score unlabeled",
+        high_score_false_positive: "High-score false positives",
+      };
       const batchTileKeys = [7, 8, 9, 4, 5, 6, 1, 2, 3];
       const numpadIndexMap = {
         Numpad7: 0,
@@ -771,7 +781,7 @@ INDEX_HTML = """<!doctype html>
         const payload = await response.json();
         summaryNode.textContent = `${payload.totalImages} images, ${payload.unlabeled} unlabeled`;
         queueSelect.innerHTML = Object.entries(payload.queueCounts)
-          .map(([queue, count]) => `<option value="${queue}">${queue} (${count})</option>`)
+          .map(([queue, count]) => `<option value="${queue}">${queueLabels[queue] || queue} (${count})</option>`)
           .join("");
         queueSelect.value = payload.queueCounts[currentQueue] != null ? currentQueue : "unlabeled";
         labeledFilter.innerHTML = [
