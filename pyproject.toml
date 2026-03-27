@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
 [project]
 name = "milady-shrinkifier"
 version = "0.2.2"
@@ -14,3 +18,9 @@ dependencies = [
   "uvicorn>=0.38.0",
   "wandb>=0.25.1",
 ]
+
+[project.scripts]
+milady = "milady.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["milady"]
