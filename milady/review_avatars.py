@@ -234,16 +234,17 @@ def get_history(limit: int = Query(24, ge=1, le=100)) -> JSONResponse:
 @app.get("/api/labeled-grid")
 def get_labeled_grid(
     filter_name: str = Query("all"),
-    limit: int = Query(240, ge=1, le=1000),
+    limit: int | None = Query(None, ge=1),
 ) -> JSONResponse:
     snapshot = require_snapshot()
     selected_filter = require_labeled_filter(filter_name)
     items = snapshot.labeled_lists[selected_filter]
+    sliced_items = items[:limit] if limit is not None else items
     return JSONResponse(
         {
             "filter": selected_filter,
             "total": len(items),
-            "items": [item.to_dict() for item in items[:limit]],
+            "items": [item.to_dict() for item in sliced_items],
         }
     )
 
@@ -251,16 +252,17 @@ def get_labeled_grid(
 @app.get("/api/queue-grid")
 def get_queue_grid(
     queue: str = Query("unlabeled"),
-    limit: int = Query(240, ge=1, le=1000),
+    limit: int | None = Query(None, ge=1),
 ) -> JSONResponse:
     snapshot = require_snapshot()
     queue_name = require_queue_name(queue)
     items = snapshot.queue_lists[queue_name]
+    sliced_items = items[:limit] if limit is not None else items
     return JSONResponse(
         {
             "queue": queue_name,
             "total": len(items),
-            "items": [item.to_dict() for item in items[:limit]],
+            "items": [item.to_dict() for item in sliced_items],
         }
     )
 

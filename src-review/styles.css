@@ -193,6 +193,24 @@ a {
   gap: 10px;
 }
 
+.grid-scroll {
+  position: relative;
+  height: min(72vh, 900px);
+  overflow: auto;
+}
+
+.grid-virtual-space {
+  position: relative;
+  width: 100%;
+}
+
+.grid-virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
 .thumb-button {
   display: block;
   padding: 0;
@@ -309,6 +327,11 @@ a {
   color: #555;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.grid-row {
+  display: grid;
+  gap: 10px;
 }
 
 .toolbar-inline {

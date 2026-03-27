@@ -1,6 +1,7 @@
 import "./styles.css";
 
 import { QueryClient, QueryClientProvider, createMutation, createQuery, useQueryClient } from "@tanstack/solid-query";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 
@@ -94,6 +95,18 @@ interface BatchAssignment {
   assignedLabel: ReviewLabel;
 }
 
+type GroupLabel = ReviewLabel | "unlabeled";
+
+interface GridGroup {
+  key: GroupLabel;
+  title: string;
+  items: ReviewItem[];
+}
+
+type VirtualGridRow =
+  | { kind: "header"; key: string; title: string }
+  | { kind: "items"; key: string; items: ReviewItem[] };
+
 const queueLabels: Record<QueueName, string> = {
   unlabeled: "Unlabeled",
   heuristic_matches: "Heuristic review",
@@ -131,6 +144,13 @@ const numpadIndexMap: Record<string, number> = {
   Numpad3: 8,
 };
 const batchLabelOrder: ReviewLabel[] = ["not_milady", "milady", "unclear"];
+const gridOrder: GroupLabel[] = ["unlabeled", "milady", "not_milady", "unclear"];
+const gridGroupLabels: Record<GroupLabel, string> = {
+  unlabeled: "Unlabeled",
+  milady: "Milady",
+  not_milady: "Not Milady",
+  unclear: "Unclear",
+};
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -259,6 +279,8 @@ function App() {
   const [gridFilter, setGridFilter] = createSignal<string>("unlabeled");
   const [selectedBatchIndex, setSelectedBatchIndex] = createSignal(0);
   const [batchAssignments, setBatchAssignments] = createSignal<BatchAssignment[]>([]);
+  const [gridWidth, setGridWidth] = createSignal(0);
+  let gridScrollRef: HTMLDivElement | undefined;
 
   const summaryQuery = createQuery(() => ({
     queryKey: ["review", "summary"],
@@ -360,23 +382,68 @@ function App() {
 
   const groupedGridItems = createMemo(() => {
     const items = gridQuery.data?.items ?? [];
-    const order: Array<ReviewLabel | "unlabeled"> = ["unlabeled", "milady", "not_milady", "unclear"];
-    const labels: Record<ReviewLabel | "unlabeled", string> = {
-      unlabeled: "Unlabeled",
-      milady: "Milady",
-      not_milady: "Not Milady",
-      unclear: "Unclear",
-    };
-    return order
+    return gridOrder
       .map((label) => {
         const groupedItems = items.filter((item) => (item.label ?? "unlabeled") === label);
         return {
           key: label,
-          title: `${labels[label]} (${groupedItems.length})`,
+          title: `${gridGroupLabels[label]} (${groupedItems.length})`,
           items: groupedItems,
-        };
+        } satisfies GridGroup;
       })
       .filter((group) => group.items.length > 0);
+  });
+
+  const gridColumns = createMemo(() => {
+    const width = gridWidth();
+    if (width <= 0) {
+      return 1;
+    }
+    return Math.max(1, Math.floor((width + 10) / 106));
+  });
+
+  const gridItemRowHeight = createMemo(() => {
+    const width = gridWidth();
+    if (width <= 0) {
+      return 128;
+    }
+    const columns = gridColumns();
+    const thumbWidth = (width - Math.max(0, columns - 1) * 10) / columns;
+    return Math.ceil(thumbWidth + 32);
+  });
+
+  const virtualGridRows = createMemo<VirtualGridRow[]>(() => {
+    const columns = gridColumns();
+    const rows: VirtualGridRow[] = [];
+    for (const group of groupedGridItems()) {
+      rows.push({ kind: "header", key: `${group.key}-header`, title: group.title });
+      for (let offset = 0; offset < group.items.length; offset += columns) {
+        rows.push({
+          kind: "items",
+          key: `${group.key}-${offset}`,
+          items: group.items.slice(offset, offset + columns),
+        });
+      }
+    }
+    return rows;
+  });
+
+  const gridVirtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
+    get count() {
+      return virtualGridRows().length;
+    },
+    getScrollElement: () => gridScrollRef ?? null,
+    estimateSize: (index) => {
+      const row = virtualGridRows()[index];
+      return row?.kind === "header" ? 28 : gridItemRowHeight();
+    },
+    overscan: 8,
+  });
+
+  createEffect(() => {
+    virtualGridRows();
+    gridItemRowHeight();
+    gridVirtualizer.measure();
   });
 
   async function invalidateAll() {
@@ -453,6 +520,19 @@ function App() {
   }
 
   onMount(() => {
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      setGridWidth(entry.contentRect.width);
+    });
+
+    if (gridScrollRef) {
+      setGridWidth(gridScrollRef.clientWidth);
+      resizeObserver.observe(gridScrollRef);
+    }
+
     const handleKeyDown = async (event: KeyboardEvent) => {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
@@ -498,7 +578,10 @@ function App() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", handleKeyDown));
+    onCleanup(() => {
+      window.removeEventListener("keydown", handleKeyDown);
+      resizeObserver.disconnect();
+    });
   });
 
   return (
@@ -728,51 +811,51 @@ function App() {
           </div>
 
           <Show when={(gridQuery.data?.items.length ?? 0) > 0} fallback={<p class="empty-copy">No images for this view.</p>}>
-            <Show
-              when={gridSource() === "queue"}
-              fallback={
-                <div class="thumb-grid">
-                  <For each={gridQuery.data?.items ?? []}>
-                    {(item) => (
-                      <button
-                        type="button"
-                        class="thumb-button"
-                        data-selected={String(selectedSha() === item.sha256)}
-                        onClick={() => selectGridItem(item.sha256)}
-                      >
-                        <img src={imageUrl(item.sha256)} alt={item.sha256} />
-                        <span>{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
-                      </button>
-                    )}
-                  </For>
-                </div>
-              }
+            <div
+              ref={(element) => {
+                gridScrollRef = element;
+              }}
+              class="grid-scroll"
             >
-              <div class="browse-sections">
-                <For each={groupedGridItems()}>
-                  {(group) => (
-                    <section class="grid-group">
-                      <div class="grid-group-header">{group.title}</div>
-                      <div class="thumb-grid">
-                        <For each={group.items}>
-                          {(item) => (
-                            <button
-                              type="button"
-                              class="thumb-button"
-                              data-selected={String(selectedSha() === item.sha256)}
-                              onClick={() => selectGridItem(item.sha256)}
-                            >
-                              <img src={imageUrl(item.sha256)} alt={item.sha256} />
-                              <span>{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
-                            </button>
-                          )}
-                        </For>
+              <div class="grid-virtual-space" style={{ height: `${gridVirtualizer.getTotalSize()}px` }}>
+                <For each={gridVirtualizer.getVirtualItems()}>
+                  {(virtualItem) => {
+                    const row = virtualGridRows()[virtualItem.index];
+                    if (!row) {
+                      return null;
+                    }
+
+                    return (
+                      <div
+                        ref={(element) => gridVirtualizer.measureElement(element)}
+                        class="grid-virtual-row"
+                        style={{ transform: `translateY(${virtualItem.start}px)` }}
+                      >
+                        {row.kind === "header" ? (
+                          <div class="grid-group-header">{row.title}</div>
+                        ) : (
+                          <div class="grid-row" style={{ "grid-template-columns": `repeat(${gridColumns()}, minmax(0, 1fr))` }}>
+                            <For each={row.items}>
+                              {(item) => (
+                                <button
+                                  type="button"
+                                  class="thumb-button"
+                                  data-selected={String(selectedSha() === item.sha256)}
+                                  onClick={() => selectGridItem(item.sha256)}
+                                >
+                                  <img src={imageUrl(item.sha256)} alt={item.sha256} />
+                                  <span>{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
+                                </button>
+                              )}
+                            </For>
+                          </div>
+                        )}
                       </div>
-                    </section>
-                  )}
+                    );
+                  }}
                 </For>
               </div>
-            </Show>
+            </div>
           </Show>
         </section>
       </div>

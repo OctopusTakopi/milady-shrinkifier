@@ -11,6 +11,9 @@ importers:
       '@tanstack/solid-query':
         specifier: ^5.95.2
         version: 5.95.2(solid-js@1.9.12)
+      '@tanstack/solid-virtual':
+        specifier: ^3.13.23
+        version: 3.13.23(solid-js@1.9.12)
       onnxruntime-web:
         specifier: ^1.24.3
         version: 1.24.3
@@ -651,6 +654,14 @@ packages:
     resolution: {integrity: sha512-1xsEybSKZhgaSMUmU71f4Ows5cLWtA6YyLMDUxhSwe8J9nD1b8J2VQF7KxiSESxDOznX7WabYCSv6CtcR4XVbg==}
     peerDependencies:
       solid-js: ^1.6.0
+
+  '@tanstack/solid-virtual@3.13.23':
+    resolution: {integrity: sha512-knSNOb1ev78yaf4CnhCY+JS2NZXzp6WO/8pzI/P9GitrG6QLgBzltOl3duN8+13QkVdSMxRrUKl8mioWNlTQxA==}
+    peerDependencies:
+      solid-js: ^1.3.0
+
+  '@tanstack/virtual-core@3.13.23':
+    resolution: {integrity: sha512-zSz2Z2HNyLjCplANTDyl3BcdQJc2k1+yyFoKhNRmCr7V7dY8o8q5m8uFTI1/Pg1kL+Hgrz6u3Xo6eFUB7l66cg==}
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
@@ -1830,6 +1841,13 @@ snapshots:
     dependencies:
       '@tanstack/query-core': 5.95.2
       solid-js: 1.9.12
+
+  '@tanstack/solid-virtual@3.13.23(solid-js@1.9.12)':
+    dependencies:
+      '@tanstack/virtual-core': 3.13.23
+      solid-js: 1.9.12
+
+  '@tanstack/virtual-core@3.13.23': {}
 
   '@tybys/wasm-util@0.10.1':
     dependencies:
