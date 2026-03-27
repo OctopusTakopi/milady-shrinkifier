@@ -177,11 +177,25 @@ def init_db(connection: sqlite3.Connection) -> None:
           FOREIGN KEY(image_sha256) REFERENCES images(sha256)
         );
 
+        CREATE TABLE IF NOT EXISTS label_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          image_sha256 TEXT NOT NULL,
+          previous_label TEXT,
+          previous_label_source TEXT,
+          previous_labeled_at TEXT,
+          previous_review_notes TEXT,
+          new_label TEXT NOT NULL,
+          new_review_notes TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY(image_sha256) REFERENCES images(sha256)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_avatar_urls_image_sha256 ON avatar_urls(image_sha256);
         CREATE INDEX IF NOT EXISTS idx_avatar_urls_download_status ON avatar_urls(download_status);
         CREATE INDEX IF NOT EXISTS idx_images_label ON images(label);
         CREATE INDEX IF NOT EXISTS idx_images_split ON images(split);
         CREATE INDEX IF NOT EXISTS idx_model_scores_image_sha256 ON model_scores(image_sha256);
+        CREATE INDEX IF NOT EXISTS idx_label_events_created_at ON label_events(created_at DESC, id DESC);
         """
     )
     connection.commit()

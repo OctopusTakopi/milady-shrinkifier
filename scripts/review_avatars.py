@@ -52,6 +52,7 @@ def summary() -> JSONResponse:
             "queueCounts": counts,
             "labelCounts": label_counts,
             "unlabeled": unlabeled,
+            "canUndo": latest_label_event(connection) is not None,
         }
     )
 
@@ -76,16 +77,75 @@ def get_queue(
     )
 
 
+@app.get("/api/item/{sha256}")
+def get_item(sha256: str) -> JSONResponse:
+    connection = connect_db()
+    item = review_item_by_sha(connection, sha256)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Review item not found")
+    return JSONResponse({"item": item.to_dict()})
+
+
+@app.get("/api/history")
+def get_history(limit: int = Query(24, ge=1, le=100)) -> JSONResponse:
+    connection = connect_db()
+    items_by_sha = {item.sha256: item for item in load_review_items(connection)}
+    history = []
+    for event in recent_label_events(connection, limit):
+        item = items_by_sha.get(event["image_sha256"])
+        history.append(
+            {
+                "eventId": int(event["id"]),
+                "sha256": str(event["image_sha256"]),
+                "createdAt": str(event["created_at"]),
+                "newLabel": str(event["new_label"]),
+                "previousLabel": event["previous_label"],
+                "item": item.to_dict() if item else None,
+            }
+        )
+    return JSONResponse({"history": history})
+
+
 @app.post("/api/label")
 def label_avatar(payload: LabelPayload) -> JSONResponse:
     if payload.label not in LABELS:
         raise HTTPException(status_code=400, detail=f"Unsupported label: {payload.label}")
 
     connection = connect_db()
-    existing = connection.execute("SELECT sha256 FROM images WHERE sha256 = ?", (payload.sha256,)).fetchone()
+    existing = connection.execute(
+        """
+        SELECT sha256, label, label_source, labeled_at, review_notes
+        FROM images
+        WHERE sha256 = ?
+        """,
+        (payload.sha256,),
+    ).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail=f"Unknown avatar sha256: {payload.sha256}")
 
+    connection.execute(
+        """
+        INSERT INTO label_events (
+          image_sha256,
+          previous_label,
+          previous_label_source,
+          previous_labeled_at,
+          previous_review_notes,
+          new_label,
+          new_review_notes,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            payload.sha256,
+            existing["label"],
+            existing["label_source"],
+            existing["labeled_at"],
+            existing["review_notes"],
+            payload.label,
+            payload.note,
+        ),
+    )
     connection.execute(
         """
         UPDATE images
@@ -100,6 +160,43 @@ def label_avatar(payload: LabelPayload) -> JSONResponse:
     )
     connection.commit()
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/undo")
+def undo_last_label() -> JSONResponse:
+    connection = connect_db()
+    event = latest_label_event(connection)
+    if event is None:
+        raise HTTPException(status_code=409, detail="No label action to undo")
+
+    connection.execute(
+        """
+        UPDATE images
+        SET label = ?,
+            label_source = ?,
+            labeled_at = ?,
+            review_notes = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE sha256 = ?
+        """,
+        (
+            event["previous_label"],
+            event["previous_label_source"],
+            event["previous_labeled_at"],
+            event["previous_review_notes"],
+            event["image_sha256"],
+        ),
+    )
+    connection.execute("DELETE FROM label_events WHERE id = ?", (event["id"],))
+    connection.commit()
+    item = review_item_by_sha(connection, str(event["image_sha256"]))
+    return JSONResponse(
+        {
+            "ok": True,
+            "undoneSha256": str(event["image_sha256"]),
+            "item": item.to_dict() if item else None,
+        }
+    )
 
 
 @app.get("/api/image/{sha256}")
@@ -155,6 +252,48 @@ INDEX_HTML = """<!doctype html>
         display: flex;
         gap: 8px;
         margin-top: 12px;
+      }
+      .actions button[disabled] {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .history-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .history-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .history-thumb {
+        display: block;
+        padding: 0;
+        border: 1px solid #d7d7d2;
+        background: white;
+      }
+      .history-thumb img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+      }
+      .history-thumb span {
+        display: block;
+        padding: 4px 6px;
+        font-size: 11px;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .history-empty {
+        color: #666;
+        font-size: 12px;
+        margin: 10px 0 0;
       }
       .status-strip {
         display: flex;
@@ -223,7 +362,10 @@ INDEX_HTML = """<!doctype html>
           <select id="queue"></select>
         </label>
         <p id="summary"></p>
-        <div class="hint">Hotkeys: 1=milady, 2=not_milady, 3=unclear, x=skip</div>
+        <div class="actions">
+          <button id="undo">Undo last label</button>
+        </div>
+        <div class="hint">Hotkeys: 1=milady, 2=not_milady, 3=unclear, x=skip, z=undo</div>
       </section>
       <section class="panel">
         <h2 id="title">No item</h2>
@@ -235,6 +377,11 @@ INDEX_HTML = """<!doctype html>
           <button data-label="unclear">3 Unclear</button>
           <button id="skip">Skip</button>
         </div>
+        <div class="history-header">
+          <h2>Recent labels</h2>
+        </div>
+        <div id="history-grid" class="history-grid"></div>
+        <p id="history-empty" class="history-empty" hidden>No recent labels yet.</p>
       </section>
       <section class="panel">
         <h2>Metadata</h2>
@@ -249,8 +396,12 @@ INDEX_HTML = """<!doctype html>
       const statusStrip = document.getElementById("status-strip");
       const metadata = document.getElementById("metadata");
       const skip = document.getElementById("skip");
+      const undo = document.getElementById("undo");
+      const historyGrid = document.getElementById("history-grid");
+      const historyEmpty = document.getElementById("history-empty");
 
       let index = 0;
+      let selectedSha = null;
 
       async function loadSummary() {
         const response = await fetch("/api/summary");
@@ -259,9 +410,19 @@ INDEX_HTML = """<!doctype html>
         queueSelect.innerHTML = Object.entries(payload.queueCounts)
           .map(([queue, count]) => `<option value="${queue}">${queue} (${count})</option>`)
           .join("");
+        undo.disabled = !payload.canUndo;
       }
 
       async function loadItem() {
+        if (selectedSha) {
+          const response = await fetch(`/api/item/${encodeURIComponent(selectedSha)}`);
+          if (response.ok) {
+            const payload = await response.json();
+            renderItem(payload.item, `selected ${selectedSha.slice(0, 8)}`);
+            return;
+          }
+          selectedSha = null;
+        }
         const queue = queueSelect.value || "unlabeled";
         const response = await fetch(`/api/queue?queue=${encodeURIComponent(queue)}&index=${index}`);
         const payload = await response.json();
@@ -274,10 +435,36 @@ INDEX_HTML = """<!doctype html>
         }
         index = payload.index;
         const item = payload.item;
-        title.textContent = `${payload.queue} ${payload.index + 1}/${payload.total}`;
+        renderItem(item, `${payload.queue} ${payload.index + 1}/${payload.total}`);
+      }
+
+      function renderItem(item, heading) {
+        title.textContent = heading;
         statusStrip.innerHTML = renderStatus(item);
         preview.src = `/api/image/${item.sha256}`;
         metadata.innerHTML = renderMetadata(item);
+      }
+
+      async function loadHistory() {
+        const response = await fetch("/api/history");
+        const payload = await response.json();
+        historyGrid.innerHTML = "";
+        historyEmpty.hidden = payload.history.length > 0;
+        for (const entry of payload.history) {
+          if (!entry.item) {
+            continue;
+          }
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "history-thumb";
+          button.dataset.sha256 = entry.sha256;
+          button.innerHTML = `<img src="/api/image/${entry.sha256}" alt="${entry.sha256}" /><span>${entry.newLabel}</span>`;
+          button.addEventListener("click", async () => {
+            selectedSha = entry.sha256;
+            await loadItem();
+          });
+          historyGrid.append(button);
+        }
       }
 
       function renderStatus(item) {
@@ -343,19 +530,37 @@ INDEX_HTML = """<!doctype html>
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ sha256: shaMatch[1], label }),
         });
+        selectedSha = null;
         index += 1;
         await loadSummary();
+        await loadHistory();
+        await loadItem();
+      }
+
+      async function undoLast() {
+        const response = await fetch("/api/undo", { method: "POST" });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        selectedSha = payload.undoneSha256 || null;
+        index = Math.max(0, index - 1);
+        await loadSummary();
+        await loadHistory();
         await loadItem();
       }
 
       queueSelect.addEventListener("change", async () => {
+        selectedSha = null;
         index = 0;
         await loadItem();
       });
       skip.addEventListener("click", async () => {
+        selectedSha = null;
         index += 1;
         await loadItem();
       });
+      undo.addEventListener("click", undoLast);
       for (const button of document.querySelectorAll("button[data-label]")) {
         button.addEventListener("click", async () => {
           await labelCurrent(button.dataset.label);
@@ -366,15 +571,44 @@ INDEX_HTML = """<!doctype html>
         if (event.key === "2") await labelCurrent("not_milady");
         if (event.key === "3") await labelCurrent("unclear");
         if (event.key.toLowerCase() === "x") {
+          selectedSha = null;
           index += 1;
           await loadItem();
         }
+        if (event.key.toLowerCase() === "z") await undoLast();
       });
-      loadSummary().then(loadItem);
+      loadSummary().then(async () => {
+        await loadHistory();
+        await loadItem();
+      });
     </script>
   </body>
 </html>
 """
+
+
+def recent_label_events(connection, limit: int) -> list[Any]:
+    return connection.execute(
+        """
+        SELECT id, image_sha256, previous_label, new_label, created_at
+        FROM label_events
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def latest_label_event(connection):
+    rows = recent_label_events(connection, 1)
+    return rows[0] if rows else None
+
+
+def review_item_by_sha(connection, sha256: str):
+    for item in load_review_items(connection):
+        if item.sha256 == sha256:
+            return item
+    return None
 
 
 def main() -> None:
