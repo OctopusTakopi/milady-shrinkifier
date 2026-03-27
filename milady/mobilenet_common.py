@@ -6,7 +6,7 @@ import random
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Literal
 
 import numpy as np
 import torch
@@ -24,6 +24,7 @@ NEGATIVE_LABEL = "not_milady"
 CLASS_NAMES = [NEGATIVE_LABEL, POSITIVE_LABEL]
 POSITIVE_INDEX = 1
 SPLIT_SEED = 1337
+INFERENCE_CROP_VARIANTS: tuple[Literal["center", "top"], ...] = ("center", "top")
 
 
 @dataclass(slots=True)
@@ -225,16 +226,36 @@ def dataset_entries_to_jsonl(entries: list[DatasetEntry], path: Path) -> None:
 
 def load_image_for_inference(path: Path) -> torch.Tensor:
     with Image.open(path) as image:
-        prepared = image.convert("RGB").resize((MODEL_IMAGE_SIZE, MODEL_IMAGE_SIZE), Image.Resampling.BICUBIC)
+        prepared = image.convert("RGB")
+        return load_image_variants_for_inference(prepared)
+
+
+def load_image_variants_for_inference(image: Image.Image) -> torch.Tensor:
+    variants = [prepare_inference_variant(image, variant) for variant in INFERENCE_CROP_VARIANTS]
+    return torch.stack(variants, dim=0)
+
+
+def prepare_inference_variant(image: Image.Image, variant: Literal["center", "top"]) -> torch.Tensor:
+    centering = (0.5, 0.0) if variant == "top" else (0.5, 0.5)
+    prepared = ImageOps.fit(
+        image.convert("RGB"),
+        (MODEL_IMAGE_SIZE, MODEL_IMAGE_SIZE),
+        method=Image.Resampling.BICUBIC,
+        centering=centering,
+    )
     tensor = transforms.ToTensor()(prepared)
-    normalized = transforms.Normalize(mean=MODEL_MEAN, std=MODEL_STD)(tensor)
-    return normalized.unsqueeze(0)
+    return transforms.Normalize(mean=MODEL_MEAN, std=MODEL_STD)(tensor)
 
 
-def probabilities_from_model(model: nn.Module, paths: list[Path], device: torch.device) -> np.ndarray:
+def probabilities_from_model(model: nn.Module, paths: list[Path], device: torch.device, batch_size: int = 64) -> np.ndarray:
     model.eval()
-    tensors = torch.cat([load_image_for_inference(path) for path in paths], dim=0).to(device)
+    batches: list[np.ndarray] = []
     with torch.no_grad():
-        logits = model(tensors)
-        probabilities = score_logits_to_probabilities(logits)
-    return probabilities.detach().cpu().numpy()
+        for start in range(0, len(paths), batch_size):
+            batch_paths = paths[start : start + batch_size]
+            tensors = torch.cat([load_image_for_inference(path) for path in batch_paths], dim=0).to(device)
+            logits = model(tensors)
+            probabilities = score_logits_to_probabilities(logits).view(len(batch_paths), len(INFERENCE_CROP_VARIANTS))
+            max_probabilities = torch.max(probabilities, dim=1).values
+            batches.append(max_probabilities.detach().cpu().numpy())
+    return np.concatenate(batches) if batches else np.array([], dtype=np.float32)

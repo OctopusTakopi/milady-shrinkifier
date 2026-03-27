@@ -6,9 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
 
-from .mobilenet_common import AvatarDataset, compute_metrics, create_model, load_dataset_entries
+from .mobilenet_common import compute_metrics, create_model, load_dataset_entries, probabilities_from_model
 from .pipeline_common import MODEL_COMPARE_ROOT, MODEL_RUN_ROOT, SPLIT_ROOT, ensure_layout
 
 
@@ -42,9 +41,6 @@ def main() -> None:
     )
     print(f"[compare] output_dir={output_dir}", flush=True)
 
-    val_loader = DataLoader(AvatarDataset(val_entries, training=False), batch_size=args.batch_size, shuffle=False, num_workers=0)
-    test_loader = DataLoader(AvatarDataset(test_entries, training=False), batch_size=args.batch_size, shuffle=False, num_workers=0)
-
     results: dict[str, object] = {
         "generatedAt": datetime.now(UTC).isoformat(),
         "device": device.type,
@@ -69,7 +65,7 @@ def main() -> None:
         model.load_state_dict(state)
 
         print(f"[compare:{run_id}] evaluating validation split", flush=True)
-        val_probabilities, val_labels = evaluate(model, val_loader, device)
+        val_probabilities, val_labels = evaluate(model, val_entries, device, args.batch_size)
         threshold, val_metrics = choose_threshold(val_probabilities, val_labels, precision_floor)
         print(
             f"[compare:{run_id}] validation done threshold={threshold:.4f} "
@@ -77,7 +73,7 @@ def main() -> None:
             flush=True,
         )
         print(f"[compare:{run_id}] evaluating test split", flush=True)
-        test_probabilities, test_labels = evaluate(model, test_loader, device)
+        test_probabilities, test_labels = evaluate(model, test_entries, device, args.batch_size)
         test_metrics = compute_metrics(test_probabilities, test_labels, threshold)
 
         false_positives = collect_errors(test_entries, test_probabilities, test_labels, threshold, want_predicted=1, want_label=0)
@@ -137,17 +133,9 @@ def choose_device(force_cpu: bool) -> torch.device:
     return torch.device("cpu")
 
 
-def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> tuple[list[float], list[int]]:
-    model.eval()
-    probabilities: list[float] = []
-    labels: list[int] = []
-    with torch.no_grad():
-        for inputs, batch_labels in loader:
-            inputs = inputs.to(device)
-            logits = model(inputs)
-            batch_probabilities = torch.softmax(logits, dim=1)[:, 1]
-            probabilities.extend(batch_probabilities.detach().cpu().tolist())
-            labels.extend(batch_labels.tolist())
+def evaluate(model: torch.nn.Module, entries: list, device: torch.device, batch_size: int = 64) -> tuple[list[float], list[int]]:
+    probabilities = probabilities_from_model(model, [entry.path for entry in entries], device, batch_size=batch_size).tolist()
+    labels = [1 if entry.label == "milady" else 0 for entry in entries]
     return probabilities, labels
 
 

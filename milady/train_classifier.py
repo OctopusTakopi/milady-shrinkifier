@@ -23,7 +23,7 @@ from .mobilenet_common import (
     compute_metrics,
     create_model,
     load_dataset_entries,
-    score_logits_to_probabilities,
+    probabilities_from_model,
 )
 from .pipeline_common import MODEL_RUN_ROOT, SPLIT_ROOT
 
@@ -70,9 +70,6 @@ def main() -> None:
     criterion = build_loss(train_entries).to(device)
 
     train_loader = DataLoader(AvatarDataset(train_entries, training=True), batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(AvatarDataset(val_entries, training=False), batch_size=args.batch_size, shuffle=False)
-    test_loader = DataLoader(AvatarDataset(test_entries, training=False), batch_size=args.batch_size, shuffle=False)
-
     run_dir = MODEL_RUN_ROOT / args.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -105,7 +102,7 @@ def main() -> None:
             wandb_run,
             global_step,
         )
-        val_probabilities, val_labels = evaluate(model, val_loader, device)
+        val_probabilities, val_labels = evaluate(model, val_entries, device, args.batch_size)
         threshold, threshold_metrics = choose_threshold(val_probabilities, val_labels, args.precision_floor)
         epoch_duration_seconds = perf_counter() - epoch_started_at
         completed_epoch_durations.append(epoch_duration_seconds)
@@ -180,7 +177,7 @@ def main() -> None:
 
     model.load_state_dict(best_state)
     print("[test] evaluating best checkpoint on test split", flush=True)
-    test_probabilities, test_labels = evaluate(model, test_loader, device)
+    test_probabilities, test_labels = evaluate(model, test_entries, device, args.batch_size)
     test_metrics = compute_metrics(test_probabilities, test_labels, best_threshold)
 
     summary = {
@@ -368,17 +365,9 @@ def run_epoch(
     return total_loss / max(1, total_items), global_step_base + total_batches
 
 
-def evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> tuple[list[float], list[int]]:
-    model.eval()
-    probabilities: list[float] = []
-    labels: list[int] = []
-    with torch.no_grad():
-        for inputs, batch_labels in loader:
-            inputs = inputs.to(device)
-            logits = model(inputs)
-            batch_probabilities = score_logits_to_probabilities(logits).detach().cpu().tolist()
-            probabilities.extend(float(value) for value in batch_probabilities)
-            labels.extend(int(value) for value in batch_labels.tolist())
+def evaluate(model: nn.Module, entries: list, device: torch.device, batch_size: int = 64) -> tuple[list[float], list[int]]:
+    probabilities = probabilities_from_model(model, [entry.path for entry in entries], device, batch_size=batch_size).tolist()
+    labels = [1 if entry.label == "milady" else 0 for entry in entries]
     return probabilities, labels
 
 

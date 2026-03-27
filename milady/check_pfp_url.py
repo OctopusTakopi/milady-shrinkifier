@@ -9,9 +9,8 @@ from pathlib import Path
 import httpx
 import torch
 from PIL import Image
-from torchvision import transforms
 
-from .mobilenet_common import MODEL_IMAGE_SIZE, MODEL_MEAN, MODEL_STD, create_model
+from .mobilenet_common import INFERENCE_CROP_VARIANTS, create_model, load_image_variants_for_inference, score_logits_to_probabilities
 from .pipeline_common import MODEL_RUN_ROOT
 
 
@@ -88,11 +87,10 @@ def normalize_profile_image_url(url: str) -> str:
 
 def infer_probability(model: torch.nn.Module, image_bytes: bytes) -> float:
     with Image.open(BytesIO(image_bytes)) as image:
-        prepared = image.convert("RGB").resize((MODEL_IMAGE_SIZE, MODEL_IMAGE_SIZE), Image.Resampling.BICUBIC)
-    tensor = transforms.ToTensor()(prepared)
-    normalized = transforms.Normalize(mean=MODEL_MEAN, std=MODEL_STD)(tensor).unsqueeze(0)
+        variants = load_image_variants_for_inference(image.convert("RGB"))
     with torch.no_grad():
-        probability = torch.softmax(model(normalized), dim=1)[0, 1]
+        probabilities = score_logits_to_probabilities(model(variants)).view(1, len(INFERENCE_CROP_VARIANTS))
+        probability = torch.max(probabilities, dim=1).values[0]
     return float(probability.item())
 
 

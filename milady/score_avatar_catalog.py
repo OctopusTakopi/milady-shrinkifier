@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from .mobilenet_common import create_model, load_image_for_inference, score_logits_to_probabilities
+from .mobilenet_common import probabilities_from_model, create_model
 from .pipeline_common import MODEL_RUN_ROOT, connect_db, now_iso, resolve_repo_path
 
 
@@ -52,11 +52,17 @@ def main() -> None:
 
     created_at = now_iso()
     scored = 0
+    batch_paths: list[Path] = []
+    batch_rows = []
     for row in rows:
         path = resolve_repo_path(str(row["local_path"]))
         if not path.exists():
             continue
-        probability = infer_probability(model, path, device)
+        batch_paths.append(path)
+        batch_rows.append(row)
+
+    probabilities = probabilities_from_model(model, batch_paths, device, batch_size=64)
+    for row, probability in zip(batch_rows, probabilities.tolist(), strict=True):
         connection.execute(
             """
             INSERT INTO model_scores (
@@ -96,15 +102,6 @@ def choose_device(force_cpu: bool) -> torch.device:
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
-
-
-def infer_probability(model: torch.nn.Module, path: Path, device: torch.device) -> float:
-    tensor = load_image_for_inference(path).to(device)
-    with torch.no_grad():
-        logits = model(tensor)
-        probability = score_logits_to_probabilities(logits)[0]
-    return float(probability.detach().cpu().item())
-
 
 if __name__ == "__main__":
     main()
