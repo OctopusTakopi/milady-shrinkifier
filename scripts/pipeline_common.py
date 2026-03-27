@@ -52,6 +52,9 @@ class ReviewItem:
     heuristic_token_id: int | None
     whitelisted: bool
     max_model_score: float | None
+    latest_model_predicted_label: str | None
+    latest_model_run_id: str | None
+    disagreement_flags: list[str]
     example_profile_url: str | None
     example_notification_url: str | None
     example_tweet_url: str | None
@@ -76,6 +79,9 @@ class ReviewItem:
             "heuristicTokenId": self.heuristic_token_id,
             "whitelisted": self.whitelisted,
             "maxModelScore": self.max_model_score,
+            "latestModelPredictedLabel": self.latest_model_predicted_label,
+            "latestModelRunId": self.latest_model_run_id,
+            "disagreementFlags": self.disagreement_flags,
             "exampleProfileUrl": self.example_profile_url,
             "exampleNotificationUrl": self.example_notification_url,
             "exampleTweetUrl": self.example_tweet_url,
@@ -270,11 +276,15 @@ def load_review_items(connection: sqlite3.Connection) -> list[ReviewItem]:
     image_rows = connection.execute(
         """
         SELECT images.*,
-               latest_scores.score AS latest_model_score
+               latest_scores.score AS latest_model_score,
+               latest_scores.predicted_label AS latest_model_predicted_label,
+               latest_scores.run_id AS latest_model_run_id
         FROM images
         LEFT JOIN (
           SELECT score_records.image_sha256,
-                 score_records.score
+                 score_records.score,
+                 score_records.predicted_label,
+                 score_records.run_id
           FROM model_scores AS score_records
           INNER JOIN (
             SELECT image_sha256, MAX(created_at) AS latest_created_at
@@ -339,10 +349,26 @@ def load_review_items(connection: sqlite3.Connection) -> list[ReviewItem]:
             if row["last_seen_at"]:
                 last_seen_at = max_timestamp(last_seen_at, str(row["last_seen_at"]))
 
+        human_label = normalize_label(image_row["label"])
+        latest_model_predicted_label = (
+            str(image_row["latest_model_predicted_label"])
+            if image_row["latest_model_predicted_label"] is not None
+            else None
+        )
+        heuristic_predicted_label = "milady" if heuristic_match else "not_milady"
+        disagreement_flags: list[str] = []
+        if latest_model_predicted_label and latest_model_predicted_label != heuristic_predicted_label:
+            disagreement_flags.append("model_vs_heuristic")
+        if human_label and human_label != "unclear":
+            if human_label != heuristic_predicted_label:
+                disagreement_flags.append("human_vs_heuristic")
+            if latest_model_predicted_label and human_label != latest_model_predicted_label:
+                disagreement_flags.append("human_vs_model")
+
         review_items.append(
             ReviewItem(
                 sha256=sha256,
-                label=normalize_label(image_row["label"]),
+                label=human_label,
                 local_path=str(image_row["local_path"]),
                 byte_size=int(image_row["byte_size"]) if image_row["byte_size"] is not None else None,
                 width=int(image_row["width"]) if image_row["width"] is not None else None,
@@ -359,6 +385,11 @@ def load_review_items(connection: sqlite3.Connection) -> list[ReviewItem]:
                 max_model_score=float(image_row["latest_model_score"])
                 if image_row["latest_model_score"] is not None
                 else None,
+                latest_model_predicted_label=latest_model_predicted_label,
+                latest_model_run_id=str(image_row["latest_model_run_id"])
+                if image_row["latest_model_run_id"] is not None
+                else None,
+                disagreement_flags=disagreement_flags,
                 example_profile_url=example_profile_url,
                 example_notification_url=example_notification_url,
                 example_tweet_url=example_tweet_url,

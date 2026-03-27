@@ -156,6 +156,36 @@ INDEX_HTML = """<!doctype html>
         gap: 8px;
         margin-top: 12px;
       }
+      .status-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 8px;
+        border: 1px solid #d0d0cc;
+        background: #f7f7f5;
+        font-size: 12px;
+        line-height: 1;
+      }
+      .pill[data-tone="warn"] {
+        border-color: #d4692d;
+        color: #9a4312;
+        background: #fff2e8;
+      }
+      .pill[data-tone="bad"] {
+        border-color: #d13a31;
+        color: #a32620;
+        background: #fff0ef;
+      }
+      .pill[data-tone="good"] {
+        border-color: #1a7f37;
+        color: #176c31;
+        background: #effaf1;
+      }
       img {
         width: 100%;
         max-width: 400px;
@@ -197,6 +227,7 @@ INDEX_HTML = """<!doctype html>
       </section>
       <section class="panel">
         <h2 id="title">No item</h2>
+        <div id="status-strip" class="status-strip"></div>
         <img id="preview" alt="avatar preview" />
         <div class="actions">
           <button data-label="milady">1 Milady</button>
@@ -215,6 +246,7 @@ INDEX_HTML = """<!doctype html>
       const summaryNode = document.getElementById("summary");
       const preview = document.getElementById("preview");
       const title = document.getElementById("title");
+      const statusStrip = document.getElementById("status-strip");
       const metadata = document.getElementById("metadata");
       const skip = document.getElementById("skip");
 
@@ -235,6 +267,7 @@ INDEX_HTML = """<!doctype html>
         const payload = await response.json();
         if (!payload.item) {
           title.textContent = "Queue empty";
+          statusStrip.innerHTML = "";
           preview.removeAttribute("src");
           metadata.innerHTML = "";
           return;
@@ -242,8 +275,36 @@ INDEX_HTML = """<!doctype html>
         index = payload.index;
         const item = payload.item;
         title.textContent = `${payload.queue} ${payload.index + 1}/${payload.total}`;
+        statusStrip.innerHTML = renderStatus(item);
         preview.src = `/api/image/${item.sha256}`;
         metadata.innerHTML = renderMetadata(item);
+      }
+
+      function renderStatus(item) {
+        const parts = [
+          pill(`heuristic ${item.heuristicMatch ? "milady" : "not_milady"}`, item.heuristicMatch ? "warn" : "good"),
+        ];
+        if (item.latestModelPredictedLabel) {
+          parts.push(
+            pill(
+              `model ${item.latestModelPredictedLabel}${item.maxModelScore != null ? ` ${formatScore(item.maxModelScore)}` : ""}`,
+              item.latestModelPredictedLabel === "milady" ? "warn" : "good",
+            ),
+          );
+        } else {
+          parts.push(pill("model unscored"));
+        }
+        if (item.label) {
+          parts.push(pill(`human ${item.label}`, item.label === "unclear" ? "warn" : item.label === "milady" ? "warn" : "good"));
+        }
+        for (const flag of item.disagreementFlags || []) {
+          parts.push(pill(flag.replaceAll("_", " "), "bad"));
+        }
+        return parts.join("");
+      }
+
+      function pill(text, tone = "") {
+        return `<span class="pill"${tone ? ` data-tone="${tone}"` : ""}>${text}</span>`;
       }
 
       function renderMetadata(item) {
@@ -255,13 +316,21 @@ INDEX_HTML = """<!doctype html>
           ["seen count", item.seenCount],
           ["source surfaces", item.sourceSurfaces.join(", ") || "none"],
           ["heuristic", item.heuristicMatch ? `${item.heuristicSource || "match"} (${item.heuristicScore ?? "n/a"})` : "no"],
-          ["model score", item.maxModelScore ?? "n/a"],
+          ["model", item.latestModelPredictedLabel ? `${item.latestModelPredictedLabel} (${formatScore(item.maxModelScore)})` : "unscored"],
+          ["model run", item.latestModelRunId || "n/a"],
           ["whitelisted", item.whitelisted ? "yes" : "no"],
           ["profile", item.exampleProfileUrl ? `<a href="${item.exampleProfileUrl}" target="_blank">${item.exampleProfileUrl}</a>` : "n/a"],
           ["tweet", item.exampleTweetUrl ? `<a href="${item.exampleTweetUrl}" target="_blank">${item.exampleTweetUrl}</a>` : "n/a"],
           ["notification", item.exampleNotificationUrl ? `<a href="${item.exampleNotificationUrl}" target="_blank">${item.exampleNotificationUrl}</a>` : "n/a"],
         ];
         return rows.map(([key, value]) => `<dt>${key}</dt><dd>${value}</dd>`).join("");
+      }
+
+      function formatScore(value) {
+        if (value == null || Number.isNaN(Number(value))) {
+          return "n/a";
+        }
+        return Number(value).toFixed(3);
       }
 
       async function labelCurrent(label) {
