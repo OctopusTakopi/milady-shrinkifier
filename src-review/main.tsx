@@ -373,12 +373,21 @@ function App() {
     );
   });
 
+  const effectiveGridFilter = createMemo(() => {
+    if (gridSource() === "queue") {
+      const value = gridFilter();
+      return value in queueLabels ? value : queue();
+    }
+    const value = gridFilter();
+    return value in labeledGridLabels ? value : "all";
+  });
+
   const gridQuery = createQuery(() => ({
-    queryKey: ["review", "grid", gridSource(), gridFilter()],
+    queryKey: ["review", "grid", gridSource(), effectiveGridFilter()],
     queryFn: () =>
       gridSource() === "queue"
-        ? fetchJson<GridPayload>(`/api/queue-grid?queue=${encodeURIComponent(gridFilter())}`)
-        : fetchJson<GridPayload>(`/api/labeled-grid?filter_name=${encodeURIComponent(gridFilter())}`),
+        ? fetchJson<GridPayload>(`/api/queue-grid?queue=${encodeURIComponent(effectiveGridFilter())}`)
+        : fetchJson<GridPayload>(`/api/labeled-grid?filter_name=${encodeURIComponent(effectiveGridFilter())}`),
   }));
 
   const groupedGridItems = createMemo(() => {
@@ -831,36 +840,35 @@ function App() {
               <div class="grid-virtual-space" style={{ height: `${gridVirtualizer.getTotalSize()}px` }}>
                 <For each={gridVirtualizer.getVirtualItems()}>
                   {(virtualItem) => {
-                    const row = virtualGridRows()[virtualItem.index];
-                    if (!row) {
-                      return null;
-                    }
-
                     return (
                       <div
                         ref={(element) => gridVirtualizer.measureElement(element)}
                         class="grid-virtual-row"
                         style={{ transform: `translateY(${virtualItem.start}px)` }}
                       >
-                        {row.kind === "header" ? (
-                          <div class="grid-group-header">{row.title}</div>
-                        ) : (
-                          <div class="grid-row" style={{ "grid-template-columns": `repeat(${gridColumns()}, minmax(0, 1fr))` }}>
-                            <For each={row.items}>
-                              {(item) => (
-                                <button
-                                  type="button"
-                                  class="thumb-button"
-                                  data-selected={String(selectedSha() === item.sha256)}
-                                  onClick={() => selectGridItem(item.sha256)}
-                                >
-                                  <img src={imageUrl(item.sha256)} alt={item.sha256} />
-                                  <span>{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
-                                </button>
-                              )}
-                            </For>
-                          </div>
-                        )}
+                        <Show when={virtualGridRows()[virtualItem.index]} keyed>
+                          {(row) =>
+                            row.kind === "header" ? (
+                              <div class="grid-group-header">{row.title}</div>
+                            ) : (
+                              <div class="grid-row" style={{ "grid-template-columns": `repeat(${gridColumns()}, minmax(0, 1fr))` }}>
+                                <For each={row.items}>
+                                  {(item) => (
+                                    <button
+                                      type="button"
+                                      class="thumb-button"
+                                      data-selected={String(selectedSha() === item.sha256)}
+                                      onClick={() => selectGridItem(item.sha256)}
+                                    >
+                                      <img src={imageUrl(item.sha256)} alt={item.sha256} />
+                                      <span>{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
+                            )
+                          }
+                        </Show>
                       </div>
                     );
                   }}
