@@ -30,6 +30,13 @@ SOURCE_PRIORITY = {
     "derivative": 1,
     "official": 2,
 }
+LABEL_TIER_PRIORITY = {
+    "gold": 0,
+    "trusted": 1,
+    "weak": 2,
+}
+WEAK_LABEL_WEIGHT = 0.35
+GOLD_LABEL_SOURCE = "manual"
 
 
 @dataclass(slots=True)
@@ -40,6 +47,10 @@ class SampleRecord:
     source: str
     raw_sha: str
     pixel_digest: str
+    label_source: str
+    label_tier: str
+    sample_weight: float
+    blind_eval_eligible: bool
     exported_sha: str | None = None
 
 
@@ -50,6 +61,7 @@ class GroupRecord:
     split: str
     canonical: SampleRecord
     members: list[SampleRecord]
+    blind_eval_eligible: bool
 
 
 class UnionFind:
@@ -114,6 +126,9 @@ def main() -> None:
                     label=group.label,
                     source=group.canonical.source,
                     split=split,
+                    label_source=group.canonical.label_source,
+                    label_tier=group.canonical.label_tier,
+                    sample_weight=group.canonical.sample_weight,
                 )
             )
             for member in group.members:
@@ -128,6 +143,10 @@ def main() -> None:
                         "id": group.canonical.sample_id,
                         "path": str(group.canonical.path),
                         "source": group.canonical.source,
+                        "labelSource": group.canonical.label_source,
+                        "labelTier": group.canonical.label_tier,
+                        "sampleWeight": group.canonical.sample_weight,
+                        "blindEvalEligible": group.blind_eval_eligible,
                         "rawSha": group.canonical.raw_sha,
                         "pixelDigest": group.canonical.pixel_digest,
                     },
@@ -136,6 +155,10 @@ def main() -> None:
                             "id": member.sample_id,
                             "path": str(member.path),
                             "source": member.source,
+                            "labelSource": member.label_source,
+                            "labelTier": member.label_tier,
+                            "sampleWeight": member.sample_weight,
+                            "blindEvalEligible": member.blind_eval_eligible,
                             "rawSha": member.raw_sha,
                             "pixelDigest": member.pixel_digest,
                             "exportedSha": member.exported_sha,
@@ -168,11 +191,16 @@ def main() -> None:
             "groupCount": len(groups),
             "dedupedSampleCount": len(dataset_entries),
             "duplicatesRemoved": len(samples) - len(dataset_entries),
+            "blindEvalEligibleGroups": sum(1 for group in groups if group.blind_eval_eligible),
+            "trainOnlyGroups": sum(1 for group in groups if not group.blind_eval_eligible),
             "splits": {
                 split_name: {
                     "total": len(entries),
                     "milady": sum(1 for entry in entries if entry.label == "milady"),
                     "not_milady": sum(1 for entry in entries if entry.label == "not_milady"),
+                    "gold": sum(1 for entry in entries if entry.label_tier == "gold"),
+                    "trusted": sum(1 for entry in entries if entry.label_tier == "trusted"),
+                    "weak": sum(1 for entry in entries if entry.label_tier == "weak"),
                 }
                 for split_name, entries in by_split.items()
             },
@@ -180,9 +208,14 @@ def main() -> None:
         write_json_file(
             SPLIT_MANIFEST_PATH,
             {
-                "version": 1,
+                "version": 2,
                 "generatedAt": now_iso(),
                 "mode": manifest_mode,
+                "evaluationPolicy": {
+                    "blindEvalRequiresGoldOnly": True,
+                    "goldLabelSource": GOLD_LABEL_SOURCE,
+                    "weakLabelWeight": WEAK_LABEL_WEIGHT,
+                },
                 "ratios": {
                     "train": args.train_ratio,
                     "val": args.val_ratio,
@@ -220,6 +253,10 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
                 source="official",
                 raw_sha=fingerprint.raw_sha,
                 pixel_digest=fingerprint.pixel_digest,
+                label_source="official_corpus",
+                label_tier="trusted",
+                sample_weight=1.0,
+                blind_eval_eligible=False,
             )
         )
         processed = maybe_flush_fingerprint_cache(cache_connection, processed + 1)
@@ -236,6 +273,10 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
                 source=f"derivative:{slug}",
                 raw_sha=fingerprint.raw_sha,
                 pixel_digest=fingerprint.pixel_digest,
+                label_source="derivative_corpus",
+                label_tier="trusted",
+                sample_weight=1.0,
+                blind_eval_eligible=False,
             )
         )
         processed = maybe_flush_fingerprint_cache(cache_connection, processed + 1)
@@ -243,6 +284,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
     exported_rows = connection.execute(
         """
         SELECT sha256, local_path, label
+             , COALESCE(label_source, 'unknown') AS label_source
         FROM images
         WHERE label IN ('milady', 'not_milady')
           AND local_path IS NOT NULL
@@ -256,6 +298,8 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
         fingerprint = get_file_fingerprint(cache_connection, path, 128)
         if not fingerprint.readable:
             continue
+        label_source = str(row["label_source"])
+        label_tier = label_tier_for_export_label_source(label_source)
         samples.append(
             SampleRecord(
                 sample_id=f"export:{row['sha256']}",
@@ -264,6 +308,10 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
                 source="export",
                 raw_sha=str(row["sha256"]),
                 pixel_digest=fingerprint.pixel_digest,
+                label_source=label_source,
+                label_tier=label_tier,
+                sample_weight=sample_weight_for_label_tier(label_tier),
+                blind_eval_eligible=label_tier == "gold",
                 exported_sha=str(row["sha256"]),
             )
         )
@@ -335,26 +383,62 @@ def build_group_records(samples: list[SampleRecord]) -> list[GroupRecord]:
         label = next(iter(labels))
         canonical = min(members, key=sample_sort_key)
         group_id = compute_group_id(members)
-        groups.append(GroupRecord(group_id=group_id, label=label, split="", canonical=canonical, members=members))
+        blind_eval_eligible = all(member.blind_eval_eligible for member in members)
+        groups.append(
+            GroupRecord(
+                group_id=group_id,
+                label=label,
+                split="",
+                canonical=canonical,
+                members=members,
+                blind_eval_eligible=blind_eval_eligible,
+            )
+        )
 
     return sorted(groups, key=lambda group: group.canonical.sample_id)
 
 
 def assign_group_splits(groups: list[GroupRecord], args: argparse.Namespace, manifest_path: Path) -> tuple[dict[str, str], str]:
+    train_only_assignments = {
+        group.group_id: "train"
+        for group in groups
+        if not group.blind_eval_eligible
+    }
+    blind_eval_groups = [group for group in groups if group.blind_eval_eligible]
+
     if args.reset_splits or not manifest_path.exists():
-        return initial_group_assignments(groups, args.train_ratio, args.val_ratio, args.test_ratio), "fresh"
+        assignments = train_only_assignments | initial_group_assignments(
+            blind_eval_groups,
+            args.train_ratio,
+            args.val_ratio,
+            args.test_ratio,
+        )
+        return assignments, "fresh"
 
     manifest = read_json_file(manifest_path)
     raw_groups = manifest.get("groups")
     if not isinstance(raw_groups, list):
-        return initial_group_assignments(groups, args.train_ratio, args.val_ratio, args.test_ratio), "fresh"
+        assignments = train_only_assignments | initial_group_assignments(
+            blind_eval_groups,
+            args.train_ratio,
+            args.val_ratio,
+            args.test_ratio,
+        )
+        return assignments, "fresh"
 
     assignments = {
         str(group["groupId"]): str(group["split"])
         for group in raw_groups
         if isinstance(group, dict) and group.get("split") in {"train", "val", "test"}
     }
-    new_groups = [group for group in groups if group.group_id not in assignments]
+    for group_id, split in train_only_assignments.items():
+        assignments[group_id] = split
+
+    new_groups = [
+        group
+        for group in blind_eval_groups
+        if group.group_id not in assignments
+    ]
     if not new_groups:
         return {group.group_id: assignments[group.group_id] for group in groups}, "reused"
 
@@ -364,6 +448,8 @@ def assign_group_splits(groups: list[GroupRecord], args: argparse.Namespace, man
 
 
 def initial_group_assignments(groups: list[GroupRecord], train_ratio: float, val_ratio: float, test_ratio: float) -> dict[str, str]:
+    if not groups:
+        return {}
     group_ids = [group.group_id for group in groups]
     labels = [1 if group.label == "milady" else 0 for group in groups]
     test_indices, remaining_indices = stratified_group_partition(group_ids, labels, test_ratio, SPLIT_SEED)
@@ -429,14 +515,23 @@ def compute_group_id(members: list[SampleRecord]) -> str:
     return sha256_bytes("|".join(keys).encode("utf-8"))
 
 
+def label_tier_for_export_label_source(label_source: str) -> str:
+    return "gold" if label_source == GOLD_LABEL_SOURCE else "weak"
+
+
+def sample_weight_for_label_tier(label_tier: str) -> float:
+    return WEAK_LABEL_WEIGHT if label_tier == "weak" else 1.0
+
+
 def sample_sort_key(sample: SampleRecord) -> tuple[int, str]:
+    label_tier_priority = LABEL_TIER_PRIORITY.get(sample.label_tier, len(LABEL_TIER_PRIORITY))
     if sample.source == "export":
         priority = SOURCE_PRIORITY["export"]
     elif sample.source.startswith("derivative:"):
         priority = SOURCE_PRIORITY["derivative"]
     else:
         priority = SOURCE_PRIORITY["official"]
-    return priority, sample.sample_id
+    return label_tier_priority, priority, sample.sample_id
 
 
 def maybe_flush_fingerprint_cache(connection, processed: int, flush_every: int = 250) -> int:

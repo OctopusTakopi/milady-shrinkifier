@@ -312,7 +312,7 @@ def build_loss(train_entries: list) -> nn.Module:
     positives = sum(1 for entry in train_entries if entry.label == "milady")
     negatives = max(1, len(train_entries) - positives)
     positive_weight = negatives / max(1, positives)
-    return nn.CrossEntropyLoss(weight=torch.tensor([1.0, positive_weight], dtype=torch.float32))
+    return nn.CrossEntropyLoss(weight=torch.tensor([1.0, positive_weight], dtype=torch.float32), reduction="none")
 
 
 def run_epoch(
@@ -332,12 +332,14 @@ def run_epoch(
     total_items = 0
     total_batches = max(1, len(loader))
     epoch_started_at = perf_counter()
-    for batch_index, (inputs, labels) in enumerate(loader, start=1):
+    for batch_index, (inputs, labels, sample_weights) in enumerate(loader, start=1):
         inputs = inputs.to(device)
         labels = labels.to(device)
+        sample_weights = sample_weights.to(device)
         optimizer.zero_grad(set_to_none=True)
         logits = model(inputs)
-        loss = criterion(logits, labels)
+        loss_values = criterion(logits, labels)
+        loss = (loss_values * sample_weights).sum() / sample_weights.sum().clamp_min(1e-8)
         loss.backward()
         optimizer.step()
         total_loss += float(loss.item()) * inputs.size(0)

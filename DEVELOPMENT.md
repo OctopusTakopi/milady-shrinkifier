@@ -51,6 +51,11 @@ pnpm run debug:extension:seed-extension-profile
 
 The extension exports collected avatars as JSON manifests. The offline pipeline ingests those exports into a local SQLite catalog under `cache/`, downloads avatar images, supports manual labeling, then trains and exports a MobileNetV3-Small classifier back into the extension runtime.
 
+Split policy:
+- blind `val` / `test` only use manual export labels (`label_source=manual`)
+- official Milady images, derivative samples, and heuristic-assisted labels are train-only
+- heuristic-assisted labels stay in the training pool with a reduced sample weight
+
 Typical loop:
 
 ```bash

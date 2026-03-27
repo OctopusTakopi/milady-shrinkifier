@@ -42,9 +42,12 @@ class DatasetEntry:
     label: str
     source: str
     split: str
+    label_source: str
+    label_tier: str
+    sample_weight: float
 
 
-class AvatarDataset(Dataset[tuple[torch.Tensor, int]]):
+class AvatarDataset(Dataset[tuple[torch.Tensor, int, float]]):
     def __init__(self, entries: list[DatasetEntry], training: bool) -> None:
         self.entries = entries
         self.training = training
@@ -59,7 +62,7 @@ class AvatarDataset(Dataset[tuple[torch.Tensor, int]]):
     def __len__(self) -> int:
         return len(self.entries)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, int, float]:
         entry = self.entries[index]
         with Image.open(entry.path) as image:
             prepared = image.convert("RGB")
@@ -67,7 +70,7 @@ class AvatarDataset(Dataset[tuple[torch.Tensor, int]]):
                 prepared = apply_training_augment(prepared)
             tensor = self.to_tensor(prepared)
         label_index = POSITIVE_INDEX if entry.label == POSITIVE_LABEL else 0
-        return tensor, label_index
+        return tensor, label_index, float(entry.sample_weight)
 
 
 def create_model(pretrained: bool = True) -> nn.Module:
@@ -130,6 +133,9 @@ def load_dataset_entries(path: Path) -> list[DatasetEntry]:
                 label=str(payload["label"]),
                 source=str(payload["source"]),
                 split=str(payload["split"]),
+                label_source=str(payload.get("labelSource") or "unknown"),
+                label_tier=str(payload.get("labelTier") or "unknown"),
+                sample_weight=float(payload.get("sampleWeight", 1.0)),
             )
         )
     return entries
@@ -205,6 +211,9 @@ def dataset_entries_to_jsonl(entries: list[DatasetEntry], path: Path) -> None:
                 "label": entry.label,
                 "source": entry.source,
                 "split": entry.split,
+                "labelSource": entry.label_source,
+                "labelTier": entry.label_tier,
+                "sampleWeight": entry.sample_weight,
             }
         )
         for entry in entries
