@@ -88,22 +88,25 @@ def build_model(prototypes: np.ndarray) -> onnx.ModelProto:
     output_info = helper.make_tensor_value_info("score", TensorProto.FLOAT, [1, 1])
 
     prototype_tensor = numpy_helper.from_array(prototypes_transposed, name="prototype_matrix")
-
-    l2 = helper.make_node("ReduceL2", ["input"], ["input_norm"], keepdims=1, axes=[1])
     epsilon = numpy_helper.from_array(np.array([[1e-8]], dtype=np.float32), name="epsilon")
+    reduction_axes = numpy_helper.from_array(np.array([1], dtype=np.int64), name="reduction_axes")
+
+    square = helper.make_node("Mul", ["input", "input"], ["squared_input"])
+    sum_square = helper.make_node("ReduceSum", ["squared_input", "reduction_axes"], ["sum_square"], keepdims=1)
+    l2 = helper.make_node("Sqrt", ["sum_square"], ["input_norm"])
     safe_norm = helper.make_node("Add", ["input_norm", "epsilon"], ["safe_input_norm"])
     normalized = helper.make_node("Div", ["input", "safe_input_norm"], ["normalized_input"])
     cosine = helper.make_node("MatMul", ["normalized_input", "prototype_matrix"], ["cosine_scores"])
-    best = helper.make_node("ReduceMax", ["cosine_scores"], ["score"], keepdims=1, axes=[1])
+    best = helper.make_node("ReduceMax", ["cosine_scores", "reduction_axes"], ["score"], keepdims=1)
 
     graph = helper.make_graph(
-        [l2, safe_norm, normalized, cosine, best],
+        [square, sum_square, l2, safe_norm, normalized, cosine, best],
         "MiladyPrototypeModel",
         [input_info],
         [output_info],
-        initializer=[prototype_tensor, epsilon],
+        initializer=[prototype_tensor, epsilon, reduction_axes],
     )
-    return helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
+    return helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
 
 
 def now_iso() -> str:
