@@ -45,6 +45,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefetch-factor", type=int, default=4)
     parser.add_argument("--amp", choices=("auto", "on", "off"), default="auto")
     parser.add_argument("--compile", dest="compile_mode", choices=("auto", "on", "off"), default="auto")
+    parser.add_argument("--head-warmup-epochs", type=int, default=2)
+    parser.add_argument("--scheduler", choices=("onecycle", "cosine", "off"), default="cosine")
+    parser.add_argument("--head-learning-rate", type=float, help="Optional LR for classifier-head warmup. Defaults to learning rate.")
+    parser.add_argument("--label-smoothing", type=float, default=0.02)
     parser.add_argument("--log-every", type=int, default=25, help="Print a batch progress update every N training steps.")
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
@@ -77,14 +81,9 @@ def main() -> None:
     seed_everything(args.seed)
     device = choose_device(args.cpu)
     amp_enabled = resolve_amp_enabled(args.amp, device)
-    model = create_model(pretrained=True).to(device)
-    compile_enabled = resolve_compile_enabled(args.compile_mode, device)
-    if compile_enabled:
-        model = torch.compile(model)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    criterion = build_loss(train_entries).to(device)
-    grad_scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled and device.type == "cuda")
-
+    head_warmup_epochs = max(0, min(args.head_warmup_epochs, args.epochs))
+    finetune_epochs = max(0, args.epochs - head_warmup_epochs)
+    head_learning_rate = args.head_learning_rate if args.head_learning_rate is not None else args.learning_rate
     train_loader = DataLoader(
         AvatarDataset(train_entries, training=True),
         batch_size=args.batch_size,
@@ -92,12 +91,44 @@ def main() -> None:
         generator=build_loader_generator(args.seed),
         **dataloader_kwargs(args, device),
     )
+    model = create_model(pretrained=True).to(device)
+    compile_enabled = resolve_compile_enabled(args.compile_mode, device)
+    if compile_enabled:
+        model = torch.compile(model)
+    set_trainable_parameters(model, head_only=head_warmup_epochs > 0)
+    optimizer = create_optimizer(model, args.weight_decay, head_learning_rate if head_warmup_epochs > 0 else args.learning_rate)
+    scheduler = create_scheduler(args.scheduler, optimizer, args.learning_rate, len(train_loader), finetune_epochs) if head_warmup_epochs == 0 else None
+    criterion = build_loss(train_entries, args.label_smoothing).to(device)
+    grad_scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled and device.type == "cuda")
     run_dir = MODEL_RUN_ROOT / args.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_connection = connect_offline_cache_db()
     try:
-        print_run_header(args, device, train_entries, val_entries, test_entries, run_dir, amp_enabled, compile_enabled)
-        wandb_run = init_wandb(args, device, train_entries, val_entries, test_entries, run_dir, amp_enabled, compile_enabled)
+        print_run_header(
+            args,
+            device,
+            train_entries,
+            val_entries,
+            test_entries,
+            run_dir,
+            amp_enabled,
+            compile_enabled,
+            head_warmup_epochs,
+            head_learning_rate,
+            finetune_epochs,
+        )
+        wandb_run = init_wandb(
+            args,
+            device,
+            train_entries,
+            val_entries,
+            test_entries,
+            run_dir,
+            amp_enabled,
+            compile_enabled,
+            head_warmup_epochs,
+            head_learning_rate,
+        )
 
         best_state: dict[str, torch.Tensor] | None = None
         best_threshold = 0.995
@@ -109,8 +140,19 @@ def main() -> None:
         training_started_at = perf_counter()
         completed_epoch_durations: list[float] = []
         global_step = 0
+        phase = "warmup" if head_warmup_epochs > 0 else "finetune"
 
         for epoch in range(1, args.epochs + 1):
+            if epoch == head_warmup_epochs + 1 and head_warmup_epochs > 0:
+                phase = "finetune"
+                set_trainable_parameters(model, head_only=False)
+                optimizer = create_optimizer(model, args.weight_decay, args.learning_rate)
+                scheduler = create_scheduler(args.scheduler, optimizer, args.learning_rate, len(train_loader), finetune_epochs)
+                stale_epochs = 0
+                print(
+                    f"[phase] switching to full fine-tune lr={args.learning_rate:g} scheduler={args.scheduler}",
+                    flush=True,
+                )
             print(f"[epoch {epoch}/{args.epochs}] start", flush=True)
             epoch_started_at = perf_counter()
             train_loss, global_step = run_epoch(
@@ -126,6 +168,8 @@ def main() -> None:
                 global_step,
                 amp_enabled,
                 grad_scaler,
+                scheduler,
+                phase,
             )
             val_probabilities, val_labels = evaluate(model, val_entries, device, args.batch_size, cache_connection)
             threshold, threshold_metrics = choose_threshold(val_probabilities, val_labels, args.precision_floor)
@@ -134,6 +178,8 @@ def main() -> None:
             history.append(
                 {
                     "epoch": epoch,
+                    "phase": phase,
+                    "learningRate": current_learning_rate(optimizer),
                     "trainLoss": train_loss,
                     "valPrecision": threshold_metrics["precision"],
                     "valRecall": threshold_metrics["recall"],
@@ -147,6 +193,8 @@ def main() -> None:
                         "epoch": epoch,
                         "trainer/global_step": global_step,
                         "train/loss": train_loss,
+                        "train/lr": current_learning_rate(optimizer),
+                        "trainer/phase": 0 if phase == "warmup" else 1,
                         "val/precision": threshold_metrics["precision"],
                         "val/recall": threshold_metrics["recall"],
                         "val/f1": threshold_metrics["f1"],
@@ -156,12 +204,14 @@ def main() -> None:
                     }
                 )
             improved = threshold_metrics["recall"] > best_recall
-            stale_after_epoch = 0 if improved else stale_epochs + 1
+            stale_after_epoch = 0 if improved else (stale_epochs + 1 if phase == "finetune" else stale_epochs)
             overall_eta_seconds = estimate_overall_eta(args.epochs, epoch, completed_epoch_durations)
             print_epoch_summary(
                 epoch,
                 args.epochs,
                 train_loss,
+                phase,
+                current_learning_rate(optimizer),
                 threshold,
                 threshold_metrics,
                 improved,
@@ -178,15 +228,17 @@ def main() -> None:
                 best_recall = threshold_metrics["recall"]
                 best_epoch = epoch
                 best_val_metrics = threshold_metrics
-                stale_epochs = 0
+                if phase == "finetune":
+                    stale_epochs = 0
                 print(
                     f"[epoch {epoch}/{args.epochs}] new best checkpoint "
                     f"(recall={best_recall:.4f}, threshold={best_threshold:.4f})",
                     flush=True,
                 )
             else:
-                stale_epochs += 1
-                if stale_epochs >= args.patience:
+                if phase == "finetune":
+                    stale_epochs += 1
+                if phase == "finetune" and stale_epochs >= args.patience:
                     print(
                         f"[epoch {epoch}/{args.epochs}] early stopping after {stale_epochs} stale epoch(s)",
                         flush=True,
@@ -220,6 +272,11 @@ def main() -> None:
             "pinMemory": device.type == "cuda",
             "amp": amp_enabled,
             "compile": compile_enabled,
+            "headWarmupEpochs": head_warmup_epochs,
+            "scheduler": args.scheduler,
+            "headLearningRate": head_learning_rate,
+            "learningRate": args.learning_rate,
+            "labelSmoothing": args.label_smoothing,
             "evaluationPolicy": {
                 "headline": HEADLINE_EVAL_POLICY,
                 "trainIncludesTrustedSynthetic": True,
@@ -289,6 +346,8 @@ def init_wandb(
     run_dir: Path,
     amp_enabled: bool,
     compile_enabled: bool,
+    head_warmup_epochs: int,
+    head_learning_rate: float,
 ) -> wandb.sdk.wandb_run.Run | None:
     if args.no_wandb:
         print("[wandb] disabled via --no-wandb", flush=True)
@@ -308,8 +367,12 @@ def init_wandb(
         "pin_memory": device.type == "cuda",
         "amp": amp_enabled,
         "compile": compile_enabled,
+        "head_warmup_epochs": head_warmup_epochs,
+        "scheduler": args.scheduler,
+        "head_learning_rate": head_learning_rate,
         "log_every": args.log_every,
         "learning_rate": args.learning_rate,
+        "label_smoothing": args.label_smoothing,
         "weight_decay": args.weight_decay,
         "patience": args.patience,
         "precision_floor": args.precision_floor,
@@ -432,11 +495,52 @@ def autocast_context(device: torch.device, amp_enabled: bool):
     return nullcontext()
 
 
-def build_loss(train_entries: list) -> nn.Module:
+def build_loss(train_entries: list, label_smoothing: float) -> nn.Module:
     positives = sum(1 for entry in train_entries if entry.label == "milady")
     negatives = max(1, len(train_entries) - positives)
     positive_weight = negatives / max(1, positives)
-    return nn.CrossEntropyLoss(weight=torch.tensor([1.0, positive_weight], dtype=torch.float32), reduction="none")
+    return nn.CrossEntropyLoss(
+        weight=torch.tensor([1.0, positive_weight], dtype=torch.float32),
+        reduction="none",
+        label_smoothing=label_smoothing,
+    )
+
+
+def create_optimizer(model: nn.Module, weight_decay: float, learning_rate: float) -> torch.optim.Optimizer:
+    parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    return torch.optim.AdamW(parameters, lr=learning_rate, weight_decay=weight_decay)
+
+
+def create_scheduler(
+    scheduler_name: str,
+    optimizer: torch.optim.Optimizer,
+    learning_rate: float,
+    steps_per_epoch: int,
+    epochs: int,
+):
+    total_steps = max(1, steps_per_epoch * epochs)
+    if scheduler_name == "off" or epochs <= 0:
+        return None
+    if scheduler_name == "onecycle":
+        return torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=learning_rate,
+            total_steps=total_steps,
+            pct_start=0.1,
+            anneal_strategy="cos",
+            div_factor=25.0,
+            final_div_factor=1e4,
+        )
+    return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps)
+
+
+def set_trainable_parameters(model: nn.Module, *, head_only: bool) -> None:
+    for name, parameter in model.named_parameters():
+        parameter.requires_grad = name.startswith("classifier") if head_only else True
+
+
+def current_learning_rate(optimizer: torch.optim.Optimizer) -> float:
+    return float(optimizer.param_groups[0]["lr"])
 
 
 def run_epoch(
@@ -452,6 +556,8 @@ def run_epoch(
     global_step_base: int,
     amp_enabled: bool,
     grad_scaler: torch.amp.GradScaler,
+    scheduler,
+    phase: str,
 ) -> tuple[float, int]:
     model.train()
     total_loss = 0.0
@@ -474,6 +580,8 @@ def run_epoch(
         else:
             loss.backward()
             optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
         total_loss += float(loss.item()) * inputs.size(0)
         total_items += inputs.size(0)
         if should_log_batch(batch_index, total_batches, log_every):
@@ -493,8 +601,10 @@ def run_epoch(
                     {
                         "epoch": epoch,
                         "trainer/global_step": global_step,
+                        "trainer/phase": 0 if phase == "warmup" else 1,
                         "train/batch_loss": float(loss.item()),
                         "train/batch_avg_loss": average_loss,
+                        "train/lr": current_learning_rate(optimizer),
                         "timing/batch_elapsed_seconds": elapsed_seconds,
                         "timing/epoch_eta_seconds": epoch_eta_seconds,
                     }
@@ -529,6 +639,9 @@ def print_run_header(
     run_dir: Path,
     amp_enabled: bool,
     compile_enabled: bool,
+    head_warmup_epochs: int,
+    head_learning_rate: float,
+    finetune_epochs: int,
 ) -> None:
     positives = sum(1 for entry in train_entries if entry.label == "milady")
     negatives = len(train_entries) - positives
@@ -536,14 +649,16 @@ def print_run_header(
         f"[setup] run_id={args.run_id} device={device.type} "
         f"epochs={args.epochs} batch_size={args.batch_size} lr={args.learning_rate:g} "
         f"weight_decay={args.weight_decay:g} patience={args.patience} precision_floor={args.precision_floor:.4f} "
-        f"seed={args.seed} amp={amp_enabled} compile={compile_enabled}",
+        f"seed={args.seed} amp={amp_enabled} compile={compile_enabled} "
+        f"warmup_epochs={head_warmup_epochs} head_lr={head_learning_rate:g} "
+        f"scheduler={args.scheduler} label_smoothing={args.label_smoothing:g}",
         flush=True,
     )
     print(
         f"[setup] splits train={len(train_entries)} val={len(val_entries)} test={len(test_entries)} "
         f"train_milady={positives} train_not_milady={negatives} "
         f"num_workers={max(0, args.num_workers)} prefetch_factor={(max(1, args.prefetch_factor) if args.num_workers > 0 else 'n/a')} "
-        f"pin_memory={'cuda-only' if device.type == 'cuda' else 'off'}",
+        f"pin_memory={'cuda-only' if device.type == 'cuda' else 'off'} finetune_epochs={finetune_epochs}",
         flush=True,
     )
     print(f"[setup] artifacts={run_dir}", flush=True)
@@ -553,6 +668,8 @@ def print_epoch_summary(
     epoch: int,
     total_epochs: int,
     train_loss: float,
+    phase: str,
+    learning_rate: float,
     threshold: float,
     threshold_metrics: dict[str, float],
     improved: bool,
@@ -565,6 +682,8 @@ def print_epoch_summary(
     status = "best" if improved else f"stale={stale_epochs}/{patience}"
     print(
         f"[epoch {epoch}/{total_epochs}] "
+        f"phase={phase} "
+        f"lr={learning_rate:.6g} "
         f"train_loss={train_loss:.4f} "
         f"val_precision={threshold_metrics['precision']:.4f} "
         f"val_recall={threshold_metrics['recall']:.4f} "
