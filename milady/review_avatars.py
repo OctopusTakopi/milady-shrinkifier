@@ -569,6 +569,9 @@ INDEX_HTML = """<!doctype html>
         grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
         gap: 10px;
       }
+      .browse-sections {
+        display: block;
+      }
       .grid-group {
         display: grid;
         gap: 10px;
@@ -1009,6 +1012,7 @@ INDEX_HTML = """<!doctype html>
           : await fetch(`/api/labeled-grid?filter_name=${encodeURIComponent(filter)}`);
         const payload = await response.json();
         labeledGrid.innerHTML = "";
+        labeledGrid.className = source === "queue" ? "browse-sections" : "labeled-grid";
         labeledGridEmpty.hidden = payload.items.length > 0;
         if (source === "queue") {
           renderGroupedQueueGrid(payload.items);
