@@ -131,8 +131,7 @@ def main() -> None:
                     "val/threshold": threshold,
                     "timing/epoch_seconds": epoch_duration_seconds,
                     "timing/total_elapsed_seconds": perf_counter() - training_started_at,
-                },
-                step=epoch,
+                }
             )
         improved = threshold_metrics["recall"] > best_recall
         stale_after_epoch = 0 if improved else stale_epochs + 1
@@ -204,6 +203,7 @@ def main() -> None:
     if wandb_run is not None:
         wandb.log(
             {
+                "epoch": best_epoch,
                 "best/epoch": best_epoch,
                 "best/threshold": best_threshold,
                 "best/val_precision": best_val_metrics["precision"],
