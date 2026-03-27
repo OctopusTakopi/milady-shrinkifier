@@ -24,6 +24,7 @@
     "generate:model": "uv run python scripts/build_prototype_model.py",
     "export:classifier": "uv run python scripts/export_classifier_onnx.py",
     "ingest:avatars": "uv run python scripts/ingest_avatar_exports.py",
+    "label:heuristic": "uv run python scripts/label_heuristic_matches.py",
     "prepare:assets": "pnpm run download:images && pnpm run generate:hashes && pnpm run generate:model",
     "review:avatars": "uv run python scripts/review_avatars.py",
     "score:classifier": "uv run python scripts/score_avatar_catalog.py",
