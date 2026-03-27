@@ -15,7 +15,7 @@ A bundled ONNX classifier scans avatars as you scroll. When it spots a match, yo
 - **Debug** — borders and confidence scores on every post.
 - **Off** — does nothing.
 
-The popup tracks session stats (posts scanned, match rate, last sighting), keeps a list of detected accounts you can whitelist individually, and collects avatar data you can export for offline labeling.
+The popup tracks session stats (posts scanned, match rate, last sighting), keeps a list of detected accounts you can exempt individually, and collects avatar data you can export for offline labeling.
 
 Everything runs locally. No server calls, no telemetry, nothing leaves your browser unless you explicitly export it.
 
