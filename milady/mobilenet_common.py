@@ -102,23 +102,8 @@ def apply_training_augment(image: Image.Image) -> Image.Image:
         augmented.save(buffer, format="JPEG", quality=random.randint(52, 86))
         buffer.seek(0)
         augmented = Image.open(buffer).convert("RGB")
-    if random.random() < 0.18:
-        augmented = apply_circle_edge_artifact(augmented)
 
     return augmented
-
-
-def apply_circle_edge_artifact(image: Image.Image) -> Image.Image:
-    size = image.size[0]
-    mask = Image.new("L", (size, size), 0)
-    mask_draw = Image.new("L", (size, size), 0)
-    inner = int(size * 0.94)
-    offset = (size - inner) // 2
-    circle = Image.new("L", (inner, inner), 255)
-    mask_draw.paste(circle, (offset, offset))
-    blurred = mask_draw.filter(ImageFilter.GaussianBlur(radius=size * 0.03))
-    base = Image.new("RGB", image.size, (255, 255, 255))
-    return Image.composite(image, base, blurred)
 
 
 def load_dataset_entries(path: Path) -> list[DatasetEntry]:
