@@ -13,6 +13,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "label-heuristic": ("milady.label_heuristic_matches", "Auto-label heuristic positives as milady."),
     "build-dataset": ("milady.build_training_dataset", "Materialize train/val/test splits."),
     "train": ("milady.train_classifier", "Train the MobileNetV3-Small classifier."),
+    "compare": ("milady.compare_runs", "Compare trained checkpoints on the current dataset splits."),
     "score": ("milady.score_avatar_catalog", "Score the local catalog with a trained classifier."),
     "export-onnx": ("milady.export_classifier_onnx", "Export a trained classifier to ONNX for the extension runtime."),
     "check-pfp": ("milady.check_pfp_url", "Score a single profile image URL."),

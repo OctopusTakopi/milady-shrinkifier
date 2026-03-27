@@ -21,6 +21,7 @@ DERIVATIVE_MANIFEST_PATH = DERIVATIVE_ROOT / "manifest.json"
 DATASET_ROOT = CACHE_ROOT / "dataset"
 SPLIT_ROOT = DATASET_ROOT / "splits"
 MODEL_RUN_ROOT = CACHE_ROOT / "models" / "mobilenet_v3_small"
+MODEL_COMPARE_ROOT = MODEL_RUN_ROOT / "compare"
 CATALOG_PATH = DATASET_ROOT / "avatar_catalog.sqlite"
 PUBLIC_MODEL_PATH = PROJECT_ROOT / "public" / "models" / "milady-mobilenetv3-small.onnx"
 PUBLIC_METADATA_PATH = PROJECT_ROOT / "public" / "generated" / "milady-mobilenetv3-small.meta.json"
@@ -108,6 +109,7 @@ def ensure_layout() -> None:
     DATASET_ROOT.mkdir(parents=True, exist_ok=True)
     SPLIT_ROOT.mkdir(parents=True, exist_ok=True)
     MODEL_RUN_ROOT.mkdir(parents=True, exist_ok=True)
+    MODEL_COMPARE_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def connect_db(path: Path = CATALOG_PATH) -> sqlite3.Connection:

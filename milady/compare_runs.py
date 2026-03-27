@@ -1,0 +1,190 @@
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+import torch
+from torch.utils.data import DataLoader
+
+from .mobilenet_common import AvatarDataset, compute_metrics, create_model, load_dataset_entries
+from .pipeline_common import MODEL_COMPARE_ROOT, MODEL_RUN_ROOT, SPLIT_ROOT, ensure_layout
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compare trained classifier checkpoints on the current dataset splits.")
+    parser.add_argument("--run-id", dest="run_ids", action="append", required=True, help="Run ID to compare. Pass multiple times.")
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--cpu", action="store_true", help="Force CPU evaluation.")
+    parser.add_argument("--output-dir", type=Path, help="Optional output directory. Defaults under cache/models/.../compare.")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    run_ids = dedupe(args.run_ids)
+    if len(run_ids) < 2:
+        raise SystemExit("Pass at least two --run-id values.")
+
+    ensure_layout()
+    output_dir = args.output_dir or default_output_dir(run_ids)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    device = choose_device(args.cpu)
+    val_entries = load_dataset_entries(SPLIT_ROOT / "val.jsonl")
+    test_entries = load_dataset_entries(SPLIT_ROOT / "test.jsonl")
+    if not val_entries or not test_entries:
+        raise SystemExit("Missing val/test split files. Run `uv run milady build-dataset` first.")
+    print(
+        f"[compare] device={device.type} runs={len(run_ids)} val={len(val_entries)} test={len(test_entries)}",
+        flush=True,
+    )
+    print(f"[compare] output_dir={output_dir}", flush=True)
+
+    val_loader = DataLoader(AvatarDataset(val_entries, training=False), batch_size=args.batch_size, shuffle=False, num_workers=0)
+    test_loader = DataLoader(AvatarDataset(test_entries, training=False), batch_size=args.batch_size, shuffle=False, num_workers=0)
+
+    results: dict[str, object] = {
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "device": device.type,
+        "valSize": len(val_entries),
+        "testSize": len(test_entries),
+        "runIds": run_ids,
+        "runs": {},
+    }
+
+    for run_id in run_ids:
+        summary_path = MODEL_RUN_ROOT / run_id / "summary.json"
+        checkpoint_path = MODEL_RUN_ROOT / run_id / "best.pt"
+        if not summary_path.exists() or not checkpoint_path.exists():
+            raise SystemExit(f"Missing summary or checkpoint for run {run_id}")
+        print(f"[compare:{run_id}] loading checkpoint", flush=True)
+
+        summary = json.loads(summary_path.read_text())
+        precision_floor = float(summary["precisionFloor"])
+
+        model = create_model(pretrained=False).to(device)
+        state = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(state)
+
+        print(f"[compare:{run_id}] evaluating validation split", flush=True)
+        val_probabilities, val_labels = evaluate(model, val_loader, device)
+        threshold, val_metrics = choose_threshold(val_probabilities, val_labels, precision_floor)
+        print(
+            f"[compare:{run_id}] validation done threshold={threshold:.4f} "
+            f"precision={val_metrics['precision']:.4f} recall={val_metrics['recall']:.4f}",
+            flush=True,
+        )
+        print(f"[compare:{run_id}] evaluating test split", flush=True)
+        test_probabilities, test_labels = evaluate(model, test_loader, device)
+        test_metrics = compute_metrics(test_probabilities, test_labels, threshold)
+
+        false_positives = collect_errors(test_entries, test_probabilities, test_labels, threshold, want_predicted=1, want_label=0)
+        false_negatives = collect_errors(test_entries, test_probabilities, test_labels, threshold, want_predicted=0, want_label=1)
+
+        false_positives_path = output_dir / f"{run_id}.false_positives.json"
+        false_negatives_path = output_dir / f"{run_id}.false_negatives.json"
+        false_positives_path.write_text(json.dumps(false_positives, indent=2, sort_keys=True))
+        false_negatives_path.write_text(json.dumps(false_negatives, indent=2, sort_keys=True))
+        print(
+            f"[compare:{run_id}] test done precision={test_metrics['precision']:.4f} "
+            f"recall={test_metrics['recall']:.4f} fp={len(false_positives)} fn={len(false_negatives)}",
+            flush=True,
+        )
+
+        results["runs"][run_id] = {
+            "threshold": threshold,
+            "precisionFloor": precision_floor,
+            "valMetrics": val_metrics,
+            "testMetrics": test_metrics,
+            "falsePositiveCount": len(false_positives),
+            "falseNegativeCount": len(false_negatives),
+            "falsePositivesPath": str(false_positives_path),
+            "falseNegativesPath": str(false_negatives_path),
+        }
+
+    summary_output = output_dir / "summary.json"
+    summary_output.write_text(json.dumps(results, indent=2, sort_keys=True))
+    print(json.dumps(results, indent=2, sort_keys=True))
+    print(f"[saved] {summary_output}")
+
+
+def dedupe(run_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for run_id in run_ids:
+        if run_id in seen:
+            continue
+        seen.add(run_id)
+        ordered.append(run_id)
+    return ordered
+
+
+def default_output_dir(run_ids: list[str]) -> Path:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    slug = "__".join(run_ids)
+    return MODEL_COMPARE_ROOT / f"{stamp}__{slug}"
+
+
+def choose_device(force_cpu: bool) -> torch.device:
+    if force_cpu:
+        return torch.device("cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> tuple[list[float], list[int]]:
+    model.eval()
+    probabilities: list[float] = []
+    labels: list[int] = []
+    with torch.no_grad():
+        for inputs, batch_labels in loader:
+            inputs = inputs.to(device)
+            logits = model(inputs)
+            batch_probabilities = torch.softmax(logits, dim=1)[:, 1]
+            probabilities.extend(batch_probabilities.detach().cpu().tolist())
+            labels.extend(batch_labels.tolist())
+    return probabilities, labels
+
+
+def choose_threshold(probabilities: list[float], labels: list[int], precision_floor: float) -> tuple[float, dict[str, float]]:
+    from .mobilenet_common import choose_threshold as choose_threshold_impl
+
+    return choose_threshold_impl(probabilities, labels, precision_floor)
+
+
+def collect_errors(
+    entries,
+    probabilities: list[float],
+    labels: list[int],
+    threshold: float,
+    *,
+    want_predicted: int,
+    want_label: int,
+) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for entry, probability, label in zip(entries, probabilities, labels, strict=True):
+        predicted = 1 if probability >= threshold else 0
+        if predicted != want_predicted or label != want_label:
+            continue
+        items.append(
+            {
+                "id": entry.sample_id,
+                "path": str(entry.path),
+                "label": entry.label,
+                "source": entry.source,
+                "split": entry.split,
+                "probability": probability,
+                "threshold": threshold,
+                "predictedLabel": "milady" if predicted == 1 else "not_milady",
+            }
+        )
+    return items
+
+
+if __name__ == "__main__":
+    main()
