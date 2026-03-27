@@ -49,6 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scheduler", choices=("onecycle", "cosine", "off"), default="cosine")
     parser.add_argument("--head-learning-rate", type=float, help="Optional LR for classifier-head warmup. Defaults to learning rate.")
     parser.add_argument("--label-smoothing", type=float, default=0.02)
+    parser.add_argument("--augment", choices=("on", "off"), default="on")
     parser.add_argument("--log-every", type=int, default=25, help="Print a batch progress update every N training steps.")
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
@@ -85,7 +86,7 @@ def main() -> None:
     finetune_epochs = max(0, args.epochs - head_warmup_epochs)
     head_learning_rate = args.head_learning_rate if args.head_learning_rate is not None else args.learning_rate
     train_loader = DataLoader(
-        AvatarDataset(train_entries, training=True),
+        AvatarDataset(train_entries, training=True, augment=args.augment == "on"),
         batch_size=args.batch_size,
         shuffle=True,
         generator=build_loader_generator(args.seed),
@@ -277,6 +278,7 @@ def main() -> None:
             "headLearningRate": head_learning_rate,
             "learningRate": args.learning_rate,
             "labelSmoothing": args.label_smoothing,
+            "augment": args.augment == "on",
             "evaluationPolicy": {
                 "headline": HEADLINE_EVAL_POLICY,
                 "trainIncludesTrustedSynthetic": True,
@@ -373,6 +375,7 @@ def init_wandb(
         "log_every": args.log_every,
         "learning_rate": args.learning_rate,
         "label_smoothing": args.label_smoothing,
+        "augment": args.augment == "on",
         "weight_decay": args.weight_decay,
         "patience": args.patience,
         "precision_floor": args.precision_floor,
@@ -651,7 +654,7 @@ def print_run_header(
         f"weight_decay={args.weight_decay:g} patience={args.patience} precision_floor={args.precision_floor:.4f} "
         f"seed={args.seed} amp={amp_enabled} compile={compile_enabled} "
         f"warmup_epochs={head_warmup_epochs} head_lr={head_learning_rate:g} "
-        f"scheduler={args.scheduler} label_smoothing={args.label_smoothing:g}",
+        f"scheduler={args.scheduler} label_smoothing={args.label_smoothing:g} augment={args.augment}",
         flush=True,
     )
     print(

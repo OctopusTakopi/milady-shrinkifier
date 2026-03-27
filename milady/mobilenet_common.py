@@ -48,9 +48,10 @@ class DatasetEntry:
 
 
 class AvatarDataset(Dataset[tuple[torch.Tensor, int, float]]):
-    def __init__(self, entries: list[DatasetEntry], training: bool) -> None:
+    def __init__(self, entries: list[DatasetEntry], training: bool, augment: bool = True) -> None:
         self.entries = entries
         self.training = training
+        self.augment = augment
         self.to_tensor = transforms.Compose(
             [
                 transforms.Resize((MODEL_IMAGE_SIZE, MODEL_IMAGE_SIZE)),
@@ -66,7 +67,7 @@ class AvatarDataset(Dataset[tuple[torch.Tensor, int, float]]):
         entry = self.entries[index]
         with Image.open(entry.path) as image:
             prepared = image.convert("RGB")
-            if self.training:
+            if self.training and self.augment:
                 prepared = apply_training_augment(prepared)
             tensor = self.to_tensor(prepared)
         label_index = POSITIVE_INDEX if entry.label == POSITIVE_LABEL else 0
