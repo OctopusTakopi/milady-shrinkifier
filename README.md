@@ -32,6 +32,18 @@ There is no Chrome Web Store release. Install from [GitHub Releases](https://git
 5. Click `Load unpacked`.
 6. Select the unzipped folder.
 
+## Accuracy
+
+Headline metrics are measured on the current blind test set of manually labeled exported avatars only. Official corpus images, derivative collections, and heuristic labels are used for training, but not for the main score.
+
+| Promoted run | Precision | Recall | False positives | False negatives |
+| --- | --- | --- | --- | --- |
+| `20260327T142224Z` | `0.8333` | `0.6250` | `2` | `6` |
+| `20260327T212453Z` | `1.0000` | `0.6875` | `0` | `5` |
+| `20260328T144735Z` | `1.0000` | `0.8125` | `0` | `3` |
+
+These numbers were re-evaluated on the same current blind set on March 28, 2026, so they are directly comparable across production model revisions.
+
 ## Notes
 
 - Development, debugging, and training workflow commands live in [DEVELOPMENT.md](DEVELOPMENT.md).
