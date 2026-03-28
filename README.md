@@ -36,11 +36,11 @@ There is no Chrome Web Store release. Install from [GitHub Releases](https://git
 
 Headline metrics are measured on the current blind test set of manually labeled exported avatars only. Official corpus images, derivative collections, and heuristic labels are used for training, but not for the main score.
 
-| Promoted run | Precision | Recall | False positives | False negatives |
-| --- | --- | --- | --- | --- |
-| `20260327T142224Z` | `0.8333` | `0.6250` | `2` | `6` |
-| `20260327T212453Z` | `1.0000` | `0.6875` | `0` | `5` |
-| `20260328T144735Z` | `1.0000` | `0.8125` | `0` | `3` |
+| Promoted run | Train / val / test | Training labels | Precision | Recall | False positives | False negatives |
+| --- | --- | --- | --- | --- | --- | --- |
+| `20260327T142224Z` | `10,781 / 1,346 / 1,350` | `8,185` milady, `2,596` not_milady | `0.8333` | `0.6250` | `2` | `6` |
+| `20260327T212453Z` | `13,593 / 1,698 / 1,701` | `10,626` milady, `2,967` not_milady | `1.0000` | `0.6875` | `0` | `5` |
+| `20260328T144735Z` | `17,878 / 600 / 386` | `13,322` milady, `4,556` not_milady | `1.0000` | `0.8125` | `0` | `3` |
 
 These numbers were re-evaluated on the same current blind set on March 28, 2026, so they are directly comparable across production model revisions.
 
