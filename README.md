@@ -23,19 +23,19 @@ Everything runs locally. No server calls, no telemetry, nothing leaves your brow
 
 ## Install
 
-There is no Chrome Web Store release. Install from GitHub Releases instead:
+There is no Chrome Web Store release. Install from [GitHub Releases](https://github.com/banteg/milady-shrinkifier/releases) instead:
 
-1. Download the latest `milady-shrinkifier-vX.Y.Z-unpacked.zip` from Releases.
+1. Download the latest `milady-shrinkifier-vX.Y.Z-unpacked.zip` from the [Releases page](https://github.com/banteg/milady-shrinkifier/releases).
 2. Unzip it somewhere permanent on disk.
-3. Open `chrome://extensions`.
+3. Open [`chrome://extensions`](chrome://extensions).
 4. Enable `Developer mode`.
 5. Click `Load unpacked`.
 6. Select the unzipped folder.
 
 ## Notes
 
-- Development, debugging, and training workflow commands live in `DEVELOPMENT.md`.
-- Runtime model artifacts live in `public/models/` and `public/generated/`.
-- Training runs, labels, downloaded avatars, and dataset manifests live under ignored `cache/`.
+- Development, debugging, and training workflow commands live in [DEVELOPMENT.md](DEVELOPMENT.md).
+- Runtime model artifacts live in [`public/models/`](public/models/) and [`public/generated/`](public/generated/).
+- Training runs, labels, downloaded avatars, and dataset manifests live under ignored [`cache/`](cache/).
 - The review app supports both individual labeling and 9-up batch labeling.
 - The extension runtime is ONNX-only.
