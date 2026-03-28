@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 from .pipeline_common import (
+    INGEST_ROOT,
     EXPORT_ROOT,
     connect_db,
     coalesce_latest,
@@ -21,7 +22,7 @@ from .pipeline_common import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest Milady Shrinkifier avatar exports into the local SQLite catalog.")
-    parser.add_argument("inputs", nargs="*", help="Export JSON files to ingest. Defaults to cache/milady-shrinkifier-avatars-*.json")
+    parser.add_argument("inputs", nargs="*", help="Export JSON files to ingest. Defaults to cache/ingest/*.json")
     parser.add_argument("--copy-into-cache", action="store_true", help="Copy each ingested export into cache/exports/raw/ before recording it.")
     parser.add_argument("--force", action="store_true", help="Re-ingest exports even if they were previously seen by path.")
     return parser.parse_args()
@@ -40,18 +41,36 @@ def main() -> None:
 
     for export_path in export_paths:
         source_path = export_path.resolve()
-        stored_path = EXPORT_ROOT / export_path.name if args.copy_into_cache else source_path
-        if args.copy_into_cache:
+        should_archive = args.copy_into_cache or source_path.parent == INGEST_ROOT.resolve()
+        stored_path = EXPORT_ROOT / export_path.name if should_archive else source_path
+        if should_archive:
             stored_path.parent.mkdir(parents=True, exist_ok=True)
             if source_path != stored_path.resolve():
                 shutil.copy2(source_path, stored_path)
         export_record_path = str(stored_path.resolve())
+        source_record_path = str(source_path)
 
-        existing_export = connection.execute(
-            "SELECT export_path FROM exports WHERE export_path = ?",
-            (export_record_path,),
-        ).fetchone()
+        existing_exports = connection.execute(
+            "SELECT export_path FROM exports WHERE export_path IN (?, ?)",
+            (export_record_path, source_record_path),
+        ).fetchall()
+        existing_paths = {str(row["export_path"]) for row in existing_exports}
+        existing_export = export_record_path in existing_paths
+        existing_source_export = source_record_path in existing_paths
+
         if existing_export and not args.force:
+            skipped += 1
+            continue
+        if not args.force and should_archive and existing_source_export and source_record_path != export_record_path:
+            connection.execute(
+                """
+                UPDATE exports
+                SET export_path = ?, export_name = ?
+                WHERE export_path = ?
+                """,
+                (export_record_path, stored_path.name, source_record_path),
+            )
+            connection.commit()
             skipped += 1
             continue
 
@@ -60,8 +79,8 @@ def main() -> None:
         if not isinstance(avatars, list):
             raise SystemExit(f"Export {source_path} does not contain an avatars array.")
 
-        if existing_export and args.force:
-            connection.execute("DELETE FROM exports WHERE export_path = ?", (export_record_path,))
+        if args.force and existing_paths:
+            connection.executemany("DELETE FROM exports WHERE export_path = ?", ((path,) for path in existing_paths))
 
         for avatar in avatars:
             normalized_url = str(avatar["normalizedUrl"])

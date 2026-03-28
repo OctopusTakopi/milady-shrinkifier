@@ -59,7 +59,7 @@ Split policy:
 Typical loop:
 
 ```bash
-uv run milady ingest-avatars cache/milady-shrinkifier-avatars-<timestamp>.json
+uv run milady ingest
 uv run milady download-avatars
 uv run milady download-avatars --retry-failed
 uv run milady download-derivatives
@@ -72,3 +72,5 @@ uv run milady score --run-id <run-id>
 uv run milady export-onnx --run-id <run-id>
 pnpm run build
 ```
+
+`uv run milady ingest` scans `cache/ingest/*.json` by default and archives those manifests into `cache/exports/raw/` as it ingests them. You can still pass explicit JSON paths when needed.

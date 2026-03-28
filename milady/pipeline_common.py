@@ -16,6 +16,7 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_ROOT = PROJECT_ROOT / "cache"
+INGEST_ROOT = CACHE_ROOT / "ingest"
 EXPORT_ROOT = CACHE_ROOT / "exports" / "raw"
 AVATAR_ROOT = CACHE_ROOT / "avatars" / "files"
 DERIVATIVE_ROOT = CACHE_ROOT / "derivatives"
@@ -128,6 +129,7 @@ def now_iso() -> str:
 
 
 def ensure_layout() -> None:
+    INGEST_ROOT.mkdir(parents=True, exist_ok=True)
     EXPORT_ROOT.mkdir(parents=True, exist_ok=True)
     AVATAR_ROOT.mkdir(parents=True, exist_ok=True)
     DERIVATIVE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -339,7 +341,9 @@ def discover_export_paths(inputs: list[str]) -> list[Path]:
     if inputs:
         paths = [Path(value) for value in inputs]
     else:
-        paths = sorted(CACHE_ROOT.glob("milady-shrinkifier-avatars-*.json"))
+        inbox_paths = sorted(INGEST_ROOT.glob("*.json"))
+        legacy_paths = sorted(CACHE_ROOT.glob("milady-shrinkifier-avatars-*.json"))
+        paths = inbox_paths if inbox_paths else legacy_paths
     return [path for path in paths if path.exists()]
 
 

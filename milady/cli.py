@@ -7,7 +7,7 @@ import sys
 
 COMMANDS: dict[str, tuple[str, str]] = {
     "review": ("milady.review_avatars", "Run the local review app."),
-    "ingest-avatars": ("milady.ingest_avatar_exports", "Ingest exported avatar manifests into the local catalog."),
+    "ingest": ("milady.ingest_avatar_exports", "Ingest exported avatar manifests into the local catalog."),
     "download-avatars": ("milady.download_avatar_catalog", "Download avatar images from the local catalog."),
     "download-derivatives": ("milady.download_derivative_samples", "Download positive samples from derivative collections."),
     "label-heuristic": ("milady.label_heuristic_matches", "Auto-label heuristic positives as milady."),
