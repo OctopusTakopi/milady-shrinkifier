@@ -58,7 +58,7 @@ The extension exports collected avatars as JSON manifests. The offline pipeline 
 
 Split policy:
 - blind `val` / `test` only use manual export labels (`label_source=manual`)
-- official Milady images, derivative samples, and heuristic-assisted labels are train-only
+- NFT collection samples and heuristic-assisted labels are train-only
 - heuristic-assisted labels stay in the training pool with a reduced sample weight
 
 Typical loop:

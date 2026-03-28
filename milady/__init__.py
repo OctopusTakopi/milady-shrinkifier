@@ -1,3 +1,8 @@
+from importlib.metadata import PackageNotFoundError, version
+
 __all__ = ["__version__"]
 
-__version__ = "0.2.2"
+try:
+    __version__ = version("milady-shrinkifier")
+except PackageNotFoundError:  # pragma: no cover - editable/dev fallback
+    __version__ = "0.0.0"

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from .pipeline_common import COLLECTION_MANIFEST_PATH, COLLECTION_ROOT, guess_extension, read_json_file, write_json_file
+from .pipeline_common import COLLECTION_MANIFEST_PATH, COLLECTION_ROOT, guess_extension, write_json_file
 
 IPFS_GATEWAYS = (
     "https://ipfs.io/ipfs/",
@@ -107,19 +107,17 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     selected = [collection for collection in COLLECTIONS if not args.collections or collection.slug in args.collections]
-    existing_manifest = load_existing_manifest()
-    existing_collections = {
-        str(collection["slug"]): collection
-        for collection in existing_manifest.get("collections", [])
-        if isinstance(collection, dict) and isinstance(collection.get("slug"), str)
-    }
     manifest_payload: dict[str, object] = {
         "version": 1,
         "generatedAt": None,
         "collections": [],
     }
 
-    with httpx.Client(follow_redirects=True, timeout=args.timeout, headers={"User-Agent": "milady-shrinkifier/0.2.2"}) as client:
+    with httpx.Client(
+        follow_redirects=True,
+        timeout=args.timeout,
+        headers={"User-Agent": "milady-shrinkifier/collections"},
+    ) as client:
         for collection in selected:
             token_ids = sample_token_ids(collection)
             collection_root = COLLECTION_ROOT / collection.slug
@@ -139,7 +137,8 @@ def main() -> None:
             successful_results = sorted((result for result in results if result.success), key=lambda result: result.token_id)
             failed_results = sorted((result for result in results if not result.success), key=lambda result: result.token_id)
 
-            existing_collections[collection.slug] = {
+            manifest_payload["collections"].append(
+                {
                 "slug": collection.slug,
                 "name": collection.name,
                 "contract": collection.contract,
@@ -167,17 +166,13 @@ def main() -> None:
                     for result in failed_results
                 ],
             }
+            )
             print(
                 f"{collection.slug}: downloaded {len(successful_results)}/{len(token_ids)} "
                 f"(target {min(collection.target_count, collection.total_supply)}, failed {len(failed_results)})"
             )
 
     manifest_payload["generatedAt"] = datetime.now(UTC).isoformat()
-    manifest_payload["collections"] = [
-        existing_collections[collection.slug]
-        for collection in COLLECTIONS
-        if collection.slug in existing_collections
-    ]
     write_json_file(COLLECTION_MANIFEST_PATH, manifest_payload)
     print(f"Wrote collection manifest to {COLLECTION_MANIFEST_PATH}")
 
@@ -189,20 +184,6 @@ def sample_token_ids(collection: CollectionSpec) -> list[int]:
         return token_ids
     rng = random.Random(f"{collection.slug}:{collection.total_supply}:{sample_count}:v1")
     return sorted(rng.sample(token_ids, sample_count))
-
-
-def load_existing_manifest() -> dict[str, object]:
-    if not COLLECTION_MANIFEST_PATH.exists():
-        return {"version": 1, "generatedAt": None, "collections": []}
-    try:
-        payload = read_json_file(COLLECTION_MANIFEST_PATH)
-    except (OSError, ValueError, TypeError):
-        return {"version": 1, "generatedAt": None, "collections": []}
-    if not isinstance(payload, dict):
-        return {"version": 1, "generatedAt": None, "collections": []}
-    if not isinstance(payload.get("collections"), list):
-        payload["collections"] = []
-    return payload
 
 
 def download_token(
@@ -244,11 +225,6 @@ def download_token(
         raise ValueError(f"Failed image fetch for {collection.slug} #{token_id}: {last_error}")
     except Exception as error:  # noqa: BLE001
         return DownloadResult(token_id=token_id, success=False, error=str(error))
-
-
-def find_existing_file(collection_root: Path, token_id: int) -> Path | None:
-    matches = sorted(collection_root.glob(f"{token_id}.*"))
-    return matches[0] if matches else None
 
 
 def index_existing_files(collection_root: Path) -> dict[int, Path]:

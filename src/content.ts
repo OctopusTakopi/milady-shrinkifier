@@ -241,12 +241,12 @@ async function detectAvatar(image: HTMLImageElement, normalizedUrl: string): Pro
     return cached;
   }
 
-  const task = detectAvatarUncached(image, normalizedUrl);
+  const task = detectAvatarUncached(normalizedUrl);
   cache.set(normalizedUrl, task);
   return task;
 }
 
-async function detectAvatarUncached(image: HTMLImageElement, normalizedUrl: string): Promise<DetectionResult> {
+async function detectAvatarUncached(normalizedUrl: string): Promise<DetectionResult> {
   incrementStat("avatarsChecked");
   try {
     const runtimeImage = await loadCorsImage(normalizedUrl);
