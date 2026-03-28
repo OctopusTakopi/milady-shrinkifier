@@ -49,10 +49,6 @@ All scores come from a blind set of manually labeled avatars. Synthetic training
 
 All rows were re-evaluated on the same blind set on March 28, 2026, so they are directly comparable.
 
-## Notes
+## Development
 
-- Development, debugging, and training workflow commands live in [DEVELOPMENT.md](DEVELOPMENT.md).
-- Runtime model artifacts live in [`public/models/`](public/models/) and [`public/generated/`](public/generated/).
-- Training runs, labels, downloaded avatars, and dataset manifests live under ignored [`cache/`](cache/).
-- The review app supports both individual labeling and 9-up batch labeling.
-- The extension runtime is ONNX-only.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for build commands, debugging, and the training pipeline.

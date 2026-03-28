@@ -47,9 +47,14 @@ pnpm run debug:extension:extension-profile
 pnpm run debug:extension:seed-extension-profile
 ```
 
+## Paths
+
+- Runtime model artifacts live in `public/models/` and `public/generated/`.
+- Training runs, labels, downloaded avatars, and dataset manifests live under ignored `cache/`.
+
 ## Training Pipeline
 
-The extension exports collected avatars as JSON manifests. The offline pipeline ingests those exports into a local SQLite catalog under `cache/`, downloads avatar images, supports manual labeling, then trains and exports a MobileNetV3-Small classifier back into the extension runtime.
+The extension exports collected avatars as JSON manifests. The offline pipeline ingests those exports into a local SQLite catalog under `cache/`, downloads avatar images, supports manual labeling, then trains and exports a MobileNetV3-Small classifier back into the extension runtime. The review app supports both individual labeling and 9-up batch labeling.
 
 Split policy:
 - blind `val` / `test` only use manual export labels (`label_source=manual`)
