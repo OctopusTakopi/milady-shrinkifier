@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from .pipeline_common import DERIVATIVE_MANIFEST_PATH, DERIVATIVE_ROOT, guess_extension, read_json_file, write_json_file
+from .pipeline_common import COLLECTION_MANIFEST_PATH, COLLECTION_ROOT, guess_extension, read_json_file, write_json_file
 
 IPFS_GATEWAYS = (
     "https://ipfs.io/ipfs/",
@@ -152,8 +152,8 @@ def main() -> None:
         for collection in COLLECTIONS
         if collection.slug in existing_collections
     ]
-    write_json_file(DERIVATIVE_MANIFEST_PATH, manifest_payload)
-    print(f"Wrote derivative manifest to {DERIVATIVE_MANIFEST_PATH}")
+    write_json_file(COLLECTION_MANIFEST_PATH, manifest_payload)
+    print(f"Wrote derivative manifest to {COLLECTION_MANIFEST_PATH}")
 
 
 def sample_token_ids(collection: DerivativeCollection) -> list[int]:
@@ -166,10 +166,10 @@ def sample_token_ids(collection: DerivativeCollection) -> list[int]:
 
 
 def load_existing_manifest() -> dict[str, object]:
-    if not DERIVATIVE_MANIFEST_PATH.exists():
+    if not COLLECTION_MANIFEST_PATH.exists():
         return {"version": 1, "generatedAt": None, "collections": []}
     try:
-        payload = read_json_file(DERIVATIVE_MANIFEST_PATH)
+        payload = read_json_file(COLLECTION_MANIFEST_PATH)
     except (OSError, ValueError, TypeError):
         return {"version": 1, "generatedAt": None, "collections": []}
     if not isinstance(payload, dict):
@@ -180,7 +180,7 @@ def load_existing_manifest() -> dict[str, object]:
 
 
 def download_token(client: httpx.Client, collection: DerivativeCollection, token_id: int, force: bool) -> DownloadResult:
-    collection_root = DERIVATIVE_ROOT / collection.slug
+    collection_root = COLLECTION_ROOT / collection.slug
     collection_root.mkdir(parents=True, exist_ok=True)
     existing = find_existing_file(collection_root, token_id)
     if existing is not None and not force:

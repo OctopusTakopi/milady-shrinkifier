@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const TOTAL_TOKENS = 10_000;
 const CONCURRENCY = 16;
-const OUTPUT_DIR = resolve("cache/collections/official/milady-maker");
+const OUTPUT_DIR = resolve("cache/collections/milady-maker");
 const HOSTS = ["https://www.miladymaker.net", "https://miladymaker.net"];
 const MAX_RETRIES = 4;
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-mkdir -p cache/collections/official/milady-maker
+mkdir -p cache/collections/milady-maker
 
-seq 0 9999 | awk -v dir="$PWD/cache/collections/official/milady-maker" '{
+seq 0 9999 | awk -v dir="$PWD/cache/collections/milady-maker" '{
   printf "https://www.miladymaker.net/milady/%d.png\n out=%d.png\n dir=%s\n", $1, $1, dir
-}' > cache/collections/official/milady-maker.aria2.txt
+}' > cache/collections/milady-maker.aria2.txt
 
 aria2c \
-  --input-file=cache/collections/official/milady-maker.aria2.txt \
+  --input-file=cache/collections/milady-maker.aria2.txt \
   --continue=true \
   --allow-overwrite=false \
   --auto-file-renaming=false \

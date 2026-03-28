@@ -10,8 +10,8 @@ from sklearn.model_selection import StratifiedGroupKFold
 from .download_derivative_samples import COLLECTIONS as DERIVATIVE_COLLECTIONS
 from .mobilenet_common import DatasetEntry, SPLIT_SEED, dataset_entries_to_jsonl
 from .pipeline_common import (
-    DERIVATIVE_MANIFEST_PATH,
-    OFFICIAL_IMAGE_ROOT,
+    COLLECTION_MANIFEST_PATH,
+    MILADY_MAKER_ROOT,
     SPLIT_MANIFEST_PATH,
     SPLIT_ROOT,
     connect_db,
@@ -238,7 +238,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
 
     official_paths = [
         path
-        for path in sorted(OFFICIAL_IMAGE_ROOT.glob("*.png"))
+        for path in sorted(MILADY_MAKER_ROOT.glob("*.png"))
         if path.is_file() and path.stat().st_size > 0 and path.stem.isdigit()
     ]
     for path in official_paths:
@@ -322,10 +322,10 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
 
 
 def load_derivative_rows() -> list[tuple[str, int, Path]]:
-    if not DERIVATIVE_MANIFEST_PATH.exists():
+    if not COLLECTION_MANIFEST_PATH.exists():
         return []
 
-    manifest = read_json_file(DERIVATIVE_MANIFEST_PATH)
+    manifest = read_json_file(COLLECTION_MANIFEST_PATH)
     raw_collections = manifest.get("collections")
     if not isinstance(raw_collections, list):
         return []
