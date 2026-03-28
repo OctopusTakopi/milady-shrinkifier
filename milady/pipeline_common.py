@@ -16,10 +16,13 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_ROOT = PROJECT_ROOT / "cache"
+COLLECTION_ROOT = CACHE_ROOT / "collections"
+OFFICIAL_COLLECTION_ROOT = COLLECTION_ROOT / "official"
+DERIVATIVE_COLLECTION_ROOT = COLLECTION_ROOT / "derivatives"
 INGEST_ROOT = CACHE_ROOT / "ingest"
 EXPORT_ROOT = CACHE_ROOT / "exports" / "raw"
 AVATAR_ROOT = CACHE_ROOT / "avatars" / "files"
-DERIVATIVE_ROOT = CACHE_ROOT / "derivatives"
+DERIVATIVE_ROOT = DERIVATIVE_COLLECTION_ROOT
 DERIVATIVE_MANIFEST_PATH = DERIVATIVE_ROOT / "manifest.json"
 DATASET_ROOT = CACHE_ROOT / "dataset"
 SPLIT_ROOT = DATASET_ROOT / "splits"
@@ -32,7 +35,7 @@ MODEL_COMPARE_ROOT = MODEL_RUN_ROOT / "compare"
 CATALOG_PATH = DATASET_ROOT / "avatar_catalog.sqlite"
 PUBLIC_MODEL_PATH = PROJECT_ROOT / "public" / "models" / "milady-mobilenetv3-small.onnx"
 PUBLIC_METADATA_PATH = PROJECT_ROOT / "public" / "generated" / "milady-mobilenetv3-small.meta.json"
-OFFICIAL_IMAGE_ROOT = CACHE_ROOT / "milady-maker"
+OFFICIAL_IMAGE_ROOT = OFFICIAL_COLLECTION_ROOT / "milady-maker"
 REVIEW_QUEUES = (
     "unlabeled",
     "heuristic_matches",
@@ -129,6 +132,9 @@ def now_iso() -> str:
 
 
 def ensure_layout() -> None:
+    COLLECTION_ROOT.mkdir(parents=True, exist_ok=True)
+    OFFICIAL_COLLECTION_ROOT.mkdir(parents=True, exist_ok=True)
+    DERIVATIVE_COLLECTION_ROOT.mkdir(parents=True, exist_ok=True)
     INGEST_ROOT.mkdir(parents=True, exist_ok=True)
     EXPORT_ROOT.mkdir(parents=True, exist_ok=True)
     AVATAR_ROOT.mkdir(parents=True, exist_ok=True)
