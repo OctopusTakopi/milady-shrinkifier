@@ -573,14 +573,8 @@ function App() {
     await invalidateAll();
   }
 
-  function moveBatchSelection(delta: number) {
-    setSelectedBatchIndex((value) => {
-      const total = batchAssignments().length;
-      if (total === 0) {
-        return 0;
-      }
-      return Math.max(0, Math.min(total - 1, value + delta));
-    });
+  function moveBatchOffset(delta: number) {
+    setBatchOffset((value) => Math.max(0, value + delta));
   }
 
   async function handleUndo() {
@@ -663,14 +657,14 @@ function App() {
         cycleBatchLabel(numpadIndex);
         return;
       }
-      if (event.key === "[") {
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
-        moveBatchSelection(-1);
+        moveBatchOffset(-9);
         return;
       }
-      if (event.key === "]") {
+      if (event.key === "ArrowRight") {
         event.preventDefault();
-        moveBatchSelection(1);
+        moveBatchOffset(9);
         return;
       }
       if (event.key === "Enter" || event.code === "NumpadEnter") {
@@ -866,10 +860,10 @@ function App() {
                   <button type="button" onClick={() => void batchQuery.refetch()}>
                     Load batch
                   </button>
-                  <button type="button" disabled={batchOffset() === 0} onClick={() => setBatchOffset((value) => Math.max(0, value - 9))}>
+                  <button type="button" disabled={batchOffset() === 0} onClick={() => moveBatchOffset(-9)}>
                     Prev batch
                   </button>
-                  <button type="button" disabled={batchAssignments().length === 0} onClick={() => setBatchOffset((value) => value + 9)}>
+                  <button type="button" disabled={batchAssignments().length === 0} onClick={() => moveBatchOffset(9)}>
                     Next batch
                   </button>
                   <button type="button" disabled={batchAssignments().length === 0 || batchMutation.isPending} onClick={() => void handleCommitBatch()}>
@@ -877,7 +871,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div class="hint">Numpad cycles labels, [ and ] moves selection, Enter commits or advances.</div>
+              <div class="hint">Numpad cycles labels, left/right moves batches, Enter commits or advances.</div>
               <div class="batch-panel">
                 <Show when={batchAssignments().length > 0} fallback={<p class="empty-copy">No items in this queue.</p>}>
                   <div class="batch-grid">
