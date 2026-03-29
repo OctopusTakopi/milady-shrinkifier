@@ -908,7 +908,7 @@ function App() {
                                           {(scoreText) => <span class="thumb-score-badge">{scoreText()}</span>}
                                         </Show>
                                       </div>
-                                      <span>{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
+                                      <span class="thumb-label">{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
                                     </button>
                                   )}
                                 </For>
