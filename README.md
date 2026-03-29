@@ -45,12 +45,12 @@ All scores below come from the full exported avatar corpus.
 
 | Version | Run | Training mix | Precision | Recall |
 | --- | --- | --- | --- | --- |
-| `v0.2.2` | `20260327T142224Z` | Milady Maker + `2,596` manually tagged avatars | `0.9965` | `0.5885` |
-| `v0.3.0` | `20260327T212453Z` | + Remilio, Pixelady + `2,967` manually tagged avatars | `1.0000` | `0.7058` |
-| `v0.4.0` | `20260328T144735Z` | + `5,715` manually tagged avatars | `0.9974` | `0.7778` |
-| `v0.5.0` | `20260328T223931Z` | + `6,773` manually tagged avatars | `0.9977` | `0.8868` |
-| `v0.6.0` | `20260329T124912Z` | + `7,370` human-reviewed avatars | `0.9954` | `0.8951` |
-| `v0.7.0` | `20260329T181946Z` | + `7,695` human-reviewed avatars | `0.9954` | `0.8868` |
+| `v0.2.2` | `20260327T142224Z` | Milady Maker + `2,596` manually reviewed avatars | `0.9965` | `0.5885` |
+| `v0.3.0` | `20260327T212453Z` | + Remilio, Pixelady + `2,967` manually reviewed avatars | `1.0000` | `0.7058` |
+| `v0.4.0` | `20260328T144735Z` | + `5,715` manually reviewed avatars | `0.9974` | `0.7778` |
+| `v0.5.0` | `20260328T223931Z` | + `6,773` manually reviewed avatars | `0.9977` | `0.8868` |
+| `v0.6.0` | `20260329T124912Z` | + `7,370` manually reviewed avatars | `0.9954` | `0.8951` |
+| `v0.7.0` | `20260329T181946Z` | + `7,695` manually reviewed avatars | `0.9954` | `0.8868` |
 | `v0.8.0` | `20260329T220050Z` | + `9,394` manually reviewed avatars | `0.9958` | `0.9691` |
 
 All rows were re-evaluated on the same exported corpus on March 30, 2026, so they are directly comparable.
