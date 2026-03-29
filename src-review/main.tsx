@@ -307,14 +307,6 @@ function metadataRows(item: ReviewItem): Array<{ label: string; value: string | 
   ];
 }
 
-function summaryCopy(summary: SummaryPayload, queueName: QueueName): string {
-  const queueCount = summary.queueCounts[queueName] ?? 0;
-  if (queueName === "unlabeled") {
-    return `${summary.totalImages} images, ${queueCount} unlabeled, run ${summary.selectedRunId ?? "unscored"}`;
-  }
-  return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queueName].toLowerCase()}, ${summary.unlabeled} unlabeled overall, run ${summary.selectedRunId ?? "unscored"}`;
-}
-
 function App() {
   const queryClient = useQueryClient();
   const [queue, setQueue] = createSignal<QueueName>("unlabeled");
@@ -393,6 +385,16 @@ function App() {
       return selectedItemQuery.data?.item ?? null;
     }
     return queueQuery.data?.item ?? null;
+  });
+
+  const activeQueueCount = createMemo(() => {
+    if (activeView() === "batch") {
+      return batchQuery.data?.total ?? summaryQuery.data?.queueCounts[queue()] ?? 0;
+    }
+    if (selectedSha() === null) {
+      return queueQuery.data?.total ?? summaryQuery.data?.queueCounts[queue()] ?? 0;
+    }
+    return summaryQuery.data?.queueCounts[queue()] ?? 0;
   });
 
   const currentHeading = createMemo(() => {
@@ -755,7 +757,13 @@ function App() {
           </label>
           <p class="summary-copy">
             <Show when={summaryQuery.data} fallback="Loading summary…">
-              {(summary) => summaryCopy(summary(), queue())}
+              {(summary) => {
+                const queueCount = activeQueueCount();
+                if (queue() === "unlabeled") {
+                  return `${summary().totalImages} images, ${queueCount} unlabeled, run ${summary().selectedRunId ?? "unscored"}`;
+                }
+                return `${summary().totalImages} images, ${queueCount} in ${queueLabels[queue()].toLowerCase()}, ${summary().unlabeled} unlabeled overall, run ${summary().selectedRunId ?? "unscored"}`;
+              }}
             </Show>
           </p>
           <div class="actions">
