@@ -147,7 +147,7 @@ The pipeline now uses three simple states for exported avatars:
   Any human-reviewed label. Individual and batch review both write `manual`, and these are treated as gold labels.
 
 - **`model`**
-  Automatic labels written by `uv run milady label-model`. These are trainable, but they carry lower weight than human-reviewed labels.
+  Automatic labels refreshed by `uv run milady score`. These are trainable, but they carry lower weight than human-reviewed labels.
 
 - **`unclear`**
   A review outcome for ambiguous items. These stay in the catalog but are excluded from training and evaluation.
@@ -171,13 +171,13 @@ Those labels are also written as `manual`.
 
 ### Model Labels
 
-After scoring, you can optionally refresh conservative automatic labels:
+After scoring, the pipeline refreshes conservative automatic labels from the same run. `uv run milady score` clears previous `model` labels and rewrites only the current run’s extreme-confidence automatic labels. This keeps the low-confidence auto-label lane tied to the latest model instead of accumulating stale pseudo-labels over time.
+
+If you want to write only `model_scores` without touching automatic labels, use:
 
 ```bash
-uv run milady label-model --run-id <run-id>
+uv run milady score --score-only
 ```
-
-That command clears previous `model` labels and rewrites only the current run’s extreme-confidence automatic labels. This keeps the low-confidence auto-label lane tied to the latest model instead of accumulating stale pseudo-labels over time.
 
 ## Step 6: Build The Dataset
 

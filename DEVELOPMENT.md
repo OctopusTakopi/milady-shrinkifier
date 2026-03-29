@@ -54,7 +54,6 @@ uv run milady download-avatars
 uv run milady download-avatars --retry-failed
 uv run milady download-collections
 uv run milady score --run-id <current-best-run-id>
-uv run milady label-model --run-id <current-best-run-id>
 pnpm run build:review
 uv run milady review
 uv run milady build-dataset
@@ -77,4 +76,4 @@ Recommended review order after scoring:
 - `Unreviewed`
 - `Residual unlabeled`
 
-In the review UI, pick a scored `run_id` first. Queue ranking, disagreement flags, and 9-up batch defaults are all tied to that selected run. Both individual and batch review write `manual` labels. `uv run milady label-model` is the separate path that refreshes lower-confidence automatic `model` labels from the selected scored run.
+In the review UI, pick a scored `run_id` first. Queue ranking, disagreement flags, and 9-up batch defaults are all tied to that selected run. Both individual and batch review write `manual` labels. `uv run milady score` refreshes lower-confidence automatic `model` labels from the same scored run unless you pass `--score-only`.

@@ -16,6 +16,10 @@ from .pipeline_common import (
     resolve_repo_path,
 )
 
+MODEL_LABEL_SOURCE = "model"
+DEFAULT_NEGATIVE_MAX_PROBABILITY = 0.005
+DEFAULT_POSITIVE_MIN_PROBABILITY = None
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Score downloaded catalog avatars with a trained MobileNetV3-Small checkpoint.")
@@ -28,11 +32,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cpu", action="store_true", help="Force CPU inference.")
     parser.add_argument("--batch-size", type=int, default=256, help="Number of catalog images to score per chunk.")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--score-only",
+        action="store_true",
+        help="Only write model_scores. Skip refreshing automatic model labels.",
+    )
+    parser.add_argument(
+        "--max-negative-probability",
+        type=float,
+        default=DEFAULT_NEGATIVE_MAX_PROBABILITY,
+        help="When refreshing model labels, auto-label images with score <= this threshold as not_milady.",
+    )
+    parser.add_argument(
+        "--min-positive-probability",
+        type=float,
+        default=DEFAULT_POSITIVE_MIN_PROBABILITY,
+        help="Optional auto-label threshold for milady when refreshing model labels. Disabled by default.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    validate_args(args)
     run_id = args.run_id or load_default_run_id()
     run_dir = MODEL_RUN_ROOT / run_id
     checkpoint_path = Path(args.checkpoint) if args.checkpoint else run_dir / "best.pt"
@@ -125,10 +147,121 @@ def main() -> None:
                 flush=True,
             )
 
-        print(f"Scored {scored} image(s) for run {run_id}.")
+        model_label_summary = None
+        if not args.score_only:
+            model_label_summary = refresh_model_labels(
+                connection,
+                run_id,
+                args.max_negative_probability,
+                args.min_positive_probability,
+            )
+
+        output = {
+            "runId": run_id,
+            "threshold": threshold,
+            "scoredImages": scored,
+            "scoreOnly": args.score_only,
+            "limit": args.limit,
+        }
+        if model_label_summary is not None:
+            output["modelLabels"] = model_label_summary
+
+        print(json.dumps(output, indent=2, sort_keys=True))
     finally:
         cache_connection.close()
         connection.close()
+
+
+def refresh_model_labels(
+    connection,
+    run_id: str,
+    max_negative_probability: float,
+    min_positive_probability: float | None,
+) -> dict[str, int | float | None]:
+    negative_candidates = connection.execute(
+        """
+        SELECT images.sha256, score_records.score
+        FROM images
+        INNER JOIN model_scores AS score_records
+          ON score_records.image_sha256 = images.sha256
+        WHERE score_records.run_id = ?
+          AND (
+            images.label IS NULL
+            OR images.label_source = ?
+          )
+          AND score_records.score <= ?
+        ORDER BY score_records.score ASC, images.sha256 ASC
+        """,
+        (run_id, MODEL_LABEL_SOURCE, max_negative_probability),
+    ).fetchall()
+
+    positive_candidates = []
+    if min_positive_probability is not None:
+        positive_candidates = connection.execute(
+            """
+            SELECT images.sha256, score_records.score
+            FROM images
+            INNER JOIN model_scores AS score_records
+              ON score_records.image_sha256 = images.sha256
+            WHERE score_records.run_id = ?
+              AND (
+                images.label IS NULL
+                OR images.label_source = ?
+              )
+              AND score_records.score >= ?
+            ORDER BY score_records.score DESC, images.sha256 ASC
+            """,
+            (run_id, MODEL_LABEL_SOURCE, min_positive_probability),
+        ).fetchall()
+
+    updates = [
+        build_model_label_payload(run_id, str(row["sha256"]), "not_milady", float(row["score"]))
+        for row in negative_candidates
+    ] + [
+        build_model_label_payload(run_id, str(row["sha256"]), "milady", float(row["score"]))
+        for row in positive_candidates
+    ]
+
+    connection.execute(
+        """
+        UPDATE images
+        SET label = NULL,
+            label_source = NULL,
+            labeled_at = NULL,
+            review_notes = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE label_source = ?
+        """,
+        (MODEL_LABEL_SOURCE,),
+    )
+    for update in updates:
+        connection.execute(
+            """
+            UPDATE images
+            SET label = ?,
+                label_source = ?,
+                labeled_at = CURRENT_TIMESTAMP,
+                review_notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE sha256 = ?
+              AND (label IS NULL OR label_source = ?)
+            """,
+            (
+                update["label"],
+                MODEL_LABEL_SOURCE,
+                update["review_note"],
+                update["sha256"],
+                MODEL_LABEL_SOURCE,
+            ),
+        )
+    connection.commit()
+    return {
+        "maxNegativeProbability": max_negative_probability,
+        "minPositiveProbability": min_positive_probability,
+        "negativeCount": len(negative_candidates),
+        "positiveCount": len(positive_candidates),
+        "updatedCount": len(updates),
+    }
 
 
 def load_default_run_id() -> str:
@@ -143,6 +276,39 @@ def load_default_run_id() -> str:
             f"Promoted model metadata at {PUBLIC_METADATA_PATH} does not contain a valid runId."
         )
     return run_id
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    if not 0.0 <= args.max_negative_probability <= 1.0:
+        raise SystemExit("--max-negative-probability must be between 0 and 1.")
+    if args.min_positive_probability is not None and not 0.0 <= args.min_positive_probability <= 1.0:
+        raise SystemExit("--min-positive-probability must be between 0 and 1.")
+    if (
+        args.min_positive_probability is not None
+        and args.min_positive_probability <= args.max_negative_probability
+    ):
+        raise SystemExit("--min-positive-probability must be greater than --max-negative-probability.")
+    if args.limit is not None and args.limit <= 0:
+        raise SystemExit("--limit must be positive.")
+    if args.limit is not None and not args.score_only:
+        raise SystemExit("--limit requires --score-only so partial scoring does not refresh model labels.")
+
+
+def build_model_label_payload(run_id: str, sha256: str, label: str, score: float) -> dict[str, str | float]:
+    return {
+        "sha256": sha256,
+        "label": label,
+        "score": score,
+        "review_note": json.dumps(
+            {
+                "type": "model_label",
+                "runId": run_id,
+                "score": score,
+                "predictedLabel": label,
+            },
+            sort_keys=True,
+        ),
+    }
 
 
 def choose_device(force_cpu: bool) -> torch.device:
