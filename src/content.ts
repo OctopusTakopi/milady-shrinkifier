@@ -37,17 +37,21 @@ import type {
 const STYLE_ID = "milady-shrinkifier-style";
 const ARTICLE_SELECTOR = 'article[data-testid="tweet"]';
 const NOTIFICATION_SELECTOR = 'article[data-testid="notification"]';
-const RESCAN_INTERVAL_MS = 1000;
 const cache = new Map<string, Promise<DetectionResult>>();
 const processed = new WeakMap<HTMLElement, string>();
 const processedNotifications = new WeakMap<HTMLElement, string>();
 const placeholders = new WeakMap<HTMLElement, HTMLDivElement>();
 const revealed = new WeakMap<HTMLElement, string>();
+const observedTweets = new WeakSet<HTMLElement>();
+const observedNotifications = new WeakSet<HTMLElement>();
+const visibleTweets = new Set<HTMLElement>();
+const visibleNotifications = new Set<HTMLElement>();
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
 let modelMetadataPromise: Promise<ResolvedModel> | null = null;
 let workerPromise: Promise<Worker> | null = null;
 let pendingWorker = new Map<string, { resolve: (score: number) => void; reject: (error: Error) => void }>();
+let visibilityObserver: IntersectionObserver | null = null;
 let scanScheduled = false;
 let delayedScanTimer: number | null = null;
 let stats: DetectionStats | null = null;
@@ -72,7 +76,18 @@ async function boot(): Promise<void> {
     loadCollectedAvatars(),
   ]);
   observeStorage();
-  const observer = new MutationObserver(() => {
+  visibilityObserver = new IntersectionObserver(handleVisibilityChange, {
+    rootMargin: "200px 0px",
+  });
+  observeTrackableElements(document.body);
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) {
+        if (node instanceof HTMLElement) {
+          observeTrackableElements(node);
+        }
+      }
+    }
     scheduleProcessVisibleTweets();
     scheduleDelayedProcessVisibleTweets();
   });
@@ -80,21 +95,81 @@ async function boot(): Promise<void> {
     childList: true,
     subtree: true,
   });
-  window.addEventListener("scroll", scheduleDelayedProcessVisibleTweets, { passive: true });
-  window.setInterval(() => {
-    scheduleProcessVisibleTweets();
-  }, RESCAN_INTERVAL_MS);
   scheduleProcessVisibleTweets();
   scheduleDelayedProcessVisibleTweets();
 }
 
 async function processVisibleTweets(): Promise<void> {
-  const tweets = Array.from(document.querySelectorAll<HTMLElement>(ARTICLE_SELECTOR));
-  const notifications = Array.from(document.querySelectorAll<HTMLElement>(NOTIFICATION_SELECTOR));
+  const tweets = Array.from(visibleTweets).filter((tweet) => tweet.isConnected);
+  const notifications = Array.from(visibleNotifications).filter((notification) => notification.isConnected);
+  for (const tweet of Array.from(visibleTweets)) {
+    if (!tweet.isConnected) {
+      visibleTweets.delete(tweet);
+    }
+  }
+  for (const notification of Array.from(visibleNotifications)) {
+    if (!notification.isConnected) {
+      visibleNotifications.delete(notification);
+    }
+  }
   await Promise.allSettled([
     ...tweets.map((tweet) => processTweet(tweet)),
     ...notifications.map((notification) => processNotificationGroup(notification)),
   ]);
+}
+
+function handleVisibilityChange(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    const element = entry.target as HTMLElement;
+    const targetSet = element.matches(ARTICLE_SELECTOR) ? visibleTweets : visibleNotifications;
+    if (entry.isIntersecting) {
+      targetSet.add(element);
+      continue;
+    }
+    targetSet.delete(element);
+  }
+  scheduleProcessVisibleTweets();
+  scheduleDelayedProcessVisibleTweets();
+}
+
+function observeTrackableElements(root: ParentNode): void {
+  if (!visibilityObserver) {
+    return;
+  }
+
+  if (root instanceof HTMLElement) {
+    observeTrackableElement(root);
+  }
+
+  for (const tweet of Array.from(root.querySelectorAll<HTMLElement>(ARTICLE_SELECTOR))) {
+    observeTrackableElement(tweet);
+  }
+  for (const notification of Array.from(root.querySelectorAll<HTMLElement>(NOTIFICATION_SELECTOR))) {
+    observeTrackableElement(notification);
+  }
+}
+
+function observeTrackableElement(element: HTMLElement): void {
+  if (!visibilityObserver) {
+    return;
+  }
+
+  if (element.matches(ARTICLE_SELECTOR)) {
+    if (observedTweets.has(element)) {
+      return;
+    }
+    observedTweets.add(element);
+    visibilityObserver.observe(element);
+    return;
+  }
+
+  if (element.matches(NOTIFICATION_SELECTOR)) {
+    if (observedNotifications.has(element)) {
+      return;
+    }
+    observedNotifications.add(element);
+    visibilityObserver.observe(element);
+  }
 }
 
 function scheduleProcessVisibleTweets(): void {
