@@ -918,7 +918,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div class="hint">Numpad cycles labels, left/right moves batches, Enter commits or advances. Batch labels are stored as model_reviewed.</div>
+              <div class="hint">Numpad cycles labels, left/right moves batches, Enter commits or advances. Batch labels are stored as manual.</div>
               <div class="batch-panel">
                 <Show when={batchAssignments().length > 0} fallback={<p class="empty-copy">No items in this queue.</p>}>
                   <div class="batch-grid">

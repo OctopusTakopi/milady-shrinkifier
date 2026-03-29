@@ -33,9 +33,10 @@ LABEL_TIER_PRIORITY = {
     "trusted": 1,
 }
 TRUSTED_COLLECTION_WEIGHT = 0.5
-TRUSTED_MODEL_REVIEWED_WEIGHT = 1.0
+MODEL_LABEL_WEIGHT = 0.5
 GOLD_LABEL_SOURCE = "manual"
-TRUSTED_LABEL_SOURCES = {"model_reviewed"}
+MODEL_LABEL_SOURCE = "model"
+TRUSTED_LABEL_SOURCES = {MODEL_LABEL_SOURCE}
 PERCEPTUAL_HASH_HAMMING_THRESHOLD = 4
 COLLECTION_HOLDOUT_VAL_COUNT = 64
 COLLECTION_HOLDOUT_TEST_COUNT = 64
@@ -270,7 +271,7 @@ def main() -> None:
                         "goldLabelSource": GOLD_LABEL_SOURCE,
                         "trustedLabelSources": sorted(TRUSTED_LABEL_SOURCES),
                         "trustedCollectionWeight": TRUSTED_COLLECTION_WEIGHT,
-                        "trustedModelReviewedWeight": TRUSTED_MODEL_REVIEWED_WEIGHT,
+                        "modelLabelWeight": MODEL_LABEL_WEIGHT,
                         "collectionBlindHoldoutValCount": COLLECTION_HOLDOUT_VAL_COUNT,
                         "collectionBlindHoldoutTestCount": COLLECTION_HOLDOUT_TEST_COUNT,
                     },
@@ -322,7 +323,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
         FROM images
         WHERE label IN ('milady', 'not_milady')
           AND local_path IS NOT NULL
-          AND label_source IN ('manual', 'model_reviewed')
+          AND label_source IN ('manual', 'model')
         ORDER BY sha256 ASC
         """
     ).fetchall()
@@ -593,7 +594,7 @@ def label_tier_for_export_label_source(label_source: str) -> str:
 
 def sample_weight_for_export_label_source(label_source: str) -> float:
     if label_source in TRUSTED_LABEL_SOURCES:
-        return TRUSTED_MODEL_REVIEWED_WEIGHT
+        return MODEL_LABEL_WEIGHT
     return 1.0
 
 

@@ -139,23 +139,24 @@ The most useful queues are:
 - **Unreviewed**
   The general backlog. This is lower-yield than the score-driven queues.
 
-### Review Trust Levels
+### Label Sources
 
-The review pipeline distinguishes between two kinds of exported labels:
+The pipeline now uses three simple states for exported avatars:
 
 - **`manual`**
-  Written by individual review. These are treated as gold labels.
+  Any human-reviewed label. Individual and batch review both write `manual`, and these are treated as gold labels.
 
-- **`model_reviewed`**
-  Written by batch review. These are human-confirmed model suggestions and are treated as trusted labels.
+- **`model`**
+  Automatic labels written by `uv run milady label-model`. These are trainable, but they carry lower weight than human-reviewed labels.
 
-Fast batch confirmation is useful, but it should not count as the same quality of signal as careful manual adjudication.
+- **`unclear`**
+  A review outcome for ambiguous items. These stay in the catalog but are excluded from training and evaluation.
 
 ### Batch Review
 
 Batch mode shows nine items at a time and defaults each tile to the model’s predicted label when available. The normal action is confirm or slightly correct, not label from scratch.
 
-Committing a batch writes `model_reviewed` labels.
+Committing a batch writes `manual` labels.
 
 ### Individual Review
 
@@ -166,7 +167,17 @@ Individual review is for:
 - failures
 - anything you want treated as full gold signal
 
-Those labels are written as `manual`.
+Those labels are also written as `manual`.
+
+### Model Labels
+
+After scoring, you can optionally refresh conservative automatic labels:
+
+```bash
+uv run milady label-model --run-id <run-id>
+```
+
+That command clears previous `model` labels and rewrites only the current run’s extreme-confidence automatic labels. This keeps the low-confidence auto-label lane tied to the latest model instead of accumulating stale pseudo-labels over time.
 
 ## Step 6: Build The Dataset
 
@@ -209,21 +220,21 @@ The split policy is intentionally asymmetric:
 
 - blind `val` and `test` prioritize manually labeled exported avatars
 - held-out collection positives are included as a fixed extra positive slice
-- routine training uses the larger mix of exported labels, reviewed labels, and collection positives
+- routine training uses the larger mix of exported labels, model labels, and collection positives
 
 ## Step 7: Trust Tiers And Weights
 
 The training set uses two trust tiers for exported labels:
 
 - **Gold**
-  full manual exported labels
+  all human-reviewed exported labels
 - **Trusted**
-  human-confirmed batch labels and collection corpus samples
+  automatic `model` labels and collection corpus samples
 
 Current weights are:
 
 - `manual`: `1.0`
-- `model_reviewed`: `0.7`
+- `model`: `0.5`
 - collection corpus positives: `0.5`
 
 The intended effect is:

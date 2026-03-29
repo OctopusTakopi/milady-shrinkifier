@@ -33,7 +33,6 @@ REVIEW_STATIC_ROOT = Path(__file__).resolve().with_name("review_static")
 REVIEW_INDEX_PATH = REVIEW_STATIC_ROOT / "review.html"
 REVIEW_ASSET_ROOT = REVIEW_STATIC_ROOT / "assets"
 MANUAL_LABEL_SOURCE = "manual"
-MODEL_REVIEWED_LABEL_SOURCE = "model_reviewed"
 
 
 class LabelPayload(BaseModel):
@@ -416,14 +415,14 @@ def batch_label(payload: BatchLabelPayload) -> JSONResponse:
             )
             connection.execute(
                 """
-                UPDATE images
-                SET label = ?,
-                    label_source = ?,
-                    labeled_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE sha256 = ?
-                """,
-                (item.label, MODEL_REVIEWED_LABEL_SOURCE, item.sha256),
+            UPDATE images
+            SET label = ?,
+                label_source = ?,
+                labeled_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE sha256 = ?
+            """,
+                (item.label, MANUAL_LABEL_SOURCE, item.sha256),
             )
             changed_count += 1
 

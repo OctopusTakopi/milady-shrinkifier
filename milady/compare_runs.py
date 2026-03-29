@@ -161,7 +161,8 @@ def load_all_manual_export_entries() -> list:
         canonical = group["canonical"]
         if canonical["source"] != "export":
             continue
-        if canonical["labelSource"] != "manual":
+        label_source = str(canonical["labelSource"])
+        if label_source != "manual":
             continue
         label = str(group["label"])
         if label not in ("milady", "not_milady"):
@@ -173,7 +174,7 @@ def load_all_manual_export_entries() -> list:
                 label=label,
                 source="export",
                 split="all-manual",
-                label_source="manual",
+                label_source=label_source,
                 label_tier=str(canonical["labelTier"]),
                 sample_weight=float(canonical["sampleWeight"]),
             )
