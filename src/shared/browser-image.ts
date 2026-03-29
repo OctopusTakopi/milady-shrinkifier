@@ -1,12 +1,11 @@
 import type { RuntimeImageFeatures } from "./runtime-image-types";
 import {
-  CLASSIFIER_MODEL_CHANNELS,
-  CLASSIFIER_MODEL_INPUT_SIZE,
-  CLASSIFIER_MODEL_MEAN,
-  CLASSIFIER_MODEL_STD,
-} from "./constants";
-
-export type CropVariant = "center" | "top";
+  computeCoverCropRegion,
+  computeNormalizedTensorFromRgbBuffer,
+  runtimeModelShape,
+  type CropVariant,
+  type RuntimeModelConfig,
+} from "./model-config";
 
 export async function loadCorsImage(url: string): Promise<HTMLImageElement> {
   const image = new Image();
@@ -25,22 +24,23 @@ export async function loadCorsImage(url: string): Promise<HTMLImageElement> {
 
 export async function computeBrowserImageFeatures(
   image: HTMLImageElement,
+  config: RuntimeModelConfig,
   variant: CropVariant = "center",
 ): Promise<RuntimeImageFeatures> {
   const classifierCanvas = document.createElement("canvas");
-  classifierCanvas.width = CLASSIFIER_MODEL_INPUT_SIZE;
-  classifierCanvas.height = CLASSIFIER_MODEL_INPUT_SIZE;
+  classifierCanvas.width = config.inputSize;
+  classifierCanvas.height = config.inputSize;
   const classifierContext = classifierCanvas.getContext("2d", { willReadFrequently: true });
   if (!classifierContext) {
     throw new Error("Unable to create classifier context");
   }
-  drawCoverImage(classifierContext, image, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE, variant);
+  drawCoverImage(classifierContext, image, config.inputSize, config.inputSize, variant);
   const classifierPixels = classifierContext
-    .getImageData(0, 0, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE).data;
+    .getImageData(0, 0, config.inputSize, config.inputSize).data;
 
   return {
-    modelTensor: computeClassifierTensor(classifierPixels),
-    modelShape: [1, CLASSIFIER_MODEL_CHANNELS, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE],
+    modelTensor: rgbaToModelTensor(classifierPixels, config),
+    modelShape: runtimeModelShape(config),
   };
 }
 
@@ -53,34 +53,33 @@ function drawCoverImage(
 ): void {
   const imageWidth = "naturalWidth" in image ? image.naturalWidth : targetWidth;
   const imageHeight = "naturalHeight" in image ? image.naturalHeight : targetHeight;
-  const scale = Math.max(targetWidth / imageWidth, targetHeight / imageHeight);
-  const scaledWidth = imageWidth * scale;
-  const scaledHeight = imageHeight * scale;
-  const offsetX = (targetWidth - scaledWidth) / 2;
-  const offsetY = variant === "top" ? 0 : (targetHeight - scaledHeight) / 2;
+  const region = computeCoverCropRegion(imageWidth, imageHeight, targetWidth, targetHeight, variant);
 
   context.clearRect(0, 0, targetWidth, targetHeight);
-  context.drawImage(image, offsetX, offsetY, scaledWidth, scaledHeight);
+  context.drawImage(
+    image,
+    region.left,
+    region.top,
+    region.width,
+    region.height,
+    0,
+    0,
+    targetWidth,
+    targetHeight,
+  );
 }
 
-function computeClassifierTensor(buffer: Uint8ClampedArray): number[] {
-  const pixelCount = CLASSIFIER_MODEL_INPUT_SIZE * CLASSIFIER_MODEL_INPUT_SIZE;
-  const tensor = new Array<number>(CLASSIFIER_MODEL_CHANNELS * pixelCount);
+function rgbaToModelTensor(buffer: Uint8ClampedArray, config: RuntimeModelConfig): Float32Array {
+  const pixelCount = config.inputSize * config.inputSize;
+  const rgbBuffer = new Uint8Array(pixelCount * 3);
 
   for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
-    const offset = pixelIndex * 4;
-    tensor[pixelIndex] = buffer[offset] / 255;
-    tensor[pixelCount + pixelIndex] = buffer[offset + 1] / 255;
-    tensor[pixelCount * 2 + pixelIndex] = buffer[offset + 2] / 255;
+    const rgbaOffset = pixelIndex * 4;
+    const rgbOffset = pixelIndex * 3;
+    rgbBuffer[rgbOffset] = buffer[rgbaOffset];
+    rgbBuffer[rgbOffset + 1] = buffer[rgbaOffset + 1];
+    rgbBuffer[rgbOffset + 2] = buffer[rgbaOffset + 2];
   }
 
-  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
-    tensor[pixelIndex] = (tensor[pixelIndex] - CLASSIFIER_MODEL_MEAN[0]) / CLASSIFIER_MODEL_STD[0];
-    tensor[pixelCount + pixelIndex] =
-      (tensor[pixelCount + pixelIndex] - CLASSIFIER_MODEL_MEAN[1]) / CLASSIFIER_MODEL_STD[1];
-    tensor[pixelCount * 2 + pixelIndex] =
-      (tensor[pixelCount * 2 + pixelIndex] - CLASSIFIER_MODEL_MEAN[2]) / CLASSIFIER_MODEL_STD[2];
-  }
-
-  return tensor;
+  return computeNormalizedTensorFromRgbBuffer(rgbBuffer, config);
 }

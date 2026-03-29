@@ -7,6 +7,7 @@ import {
   loadCorsImage,
   computeBrowserImageFeatures,
 } from "./shared/browser-image";
+import { resolveRuntimeModelConfig, type RuntimeModelConfig } from "./shared/model-config";
 import {
   normalizeProfileImageUrl,
 } from "./shared/image-core";
@@ -62,7 +63,7 @@ let localStateWriteScheduled = false;
 interface ResolvedModel {
   metadata: ModelMetadata;
   modelUrl: string;
-  positiveIndex: number;
+  config: RuntimeModelConfig;
 }
 
 void boot();
@@ -328,15 +329,15 @@ async function detectAvatar(image: HTMLImageElement, normalizedUrl: string): Pro
 async function detectAvatarUncached(normalizedUrl: string): Promise<DetectionResult> {
   incrementStat("avatarsChecked");
   try {
+    const resolvedModel = await loadModelMetadata();
     const runtimeImage = await loadCorsImage(normalizedUrl);
     const variants = await Promise.all([
-      computeBrowserImageFeatures(runtimeImage, "center"),
-      computeBrowserImageFeatures(runtimeImage, "top"),
+      computeBrowserImageFeatures(runtimeImage, resolvedModel.config, "center"),
+      computeBrowserImageFeatures(runtimeImage, resolvedModel.config, "top"),
     ]);
-    const resolvedModel = await loadModelMetadata();
     const score = await scoreWithOnnx(
       resolvedModel,
-      variants.map((entry) => entry.modelTensor),
+      variants,
       normalizedUrl,
     );
     return {
@@ -648,7 +649,7 @@ async function resolveModel(
   return {
     metadata,
     modelUrl: chrome.runtime.getURL(modelUrl),
-    positiveIndex: typeof metadata.positiveIndex === "number" ? metadata.positiveIndex : 1,
+    config: resolveRuntimeModelConfig(metadata),
   };
 }
 
@@ -684,7 +685,7 @@ async function getWorker(resolvedModel: ResolvedModel): Promise<Worker> {
     worker.postMessage({
       modelUrl: resolvedModel.modelUrl,
       wasmPath: chrome.runtime.getURL("ort/"),
-      positiveIndex: resolvedModel.positiveIndex,
+      positiveIndex: resolvedModel.config.positiveIndex,
     });
     return worker;
   });
@@ -694,22 +695,22 @@ async function getWorker(resolvedModel: ResolvedModel): Promise<Worker> {
 
 async function scoreWithOnnx(
   resolvedModel: ResolvedModel,
-  tensors: number[][],
+  variants: Array<{ modelTensor: Float32Array; modelShape: [1, number, number, number] }>,
   seed: string,
 ): Promise<number> {
   const worker = await getWorker(resolvedModel);
   const scores = await Promise.all(
-    tensors.map(
-      (input, index) =>
+    variants.map(
+      ({ modelTensor, modelShape }, index) =>
         new Promise<number>((resolve, reject) => {
           const id = `${seed}:${index}:${crypto.randomUUID()}`;
           pendingWorker.set(id, { resolve, reject });
           const payload: WorkerRequest = {
             id,
-            tensor: input,
-            shape: [1, 3, 128, 128],
+            tensor: modelTensor,
+            shape: modelShape,
           };
-          worker.postMessage(payload);
+          worker.postMessage(payload, [modelTensor.buffer]);
         }),
     ),
   );

@@ -1,47 +1,46 @@
 import sharp from "sharp";
 
 import {
-  CLASSIFIER_MODEL_CHANNELS,
-  CLASSIFIER_MODEL_INPUT_SIZE,
-  CLASSIFIER_MODEL_MEAN,
-  CLASSIFIER_MODEL_STD,
-} from "./constants";
+  computeCoverCropRegion,
+  computeNormalizedTensorFromRgbBuffer,
+  runtimeModelShape,
+  type CropVariant,
+  type RuntimeModelConfig,
+} from "./model-config";
 import type { RuntimeImageFeatures } from "./runtime-image-types";
-
-export type CropVariant = "center" | "top";
 
 export async function computeNodeImageFeatures(
   buffer: Buffer,
+  config: RuntimeModelConfig,
   variant: CropVariant = "center",
 ): Promise<RuntimeImageFeatures> {
-  const position = variant === "top" ? "north" : "centre";
+  const metadata = await sharp(buffer).metadata();
+  if (!metadata.width || !metadata.height) {
+    throw new Error("Unable to read image dimensions for classifier preprocessing");
+  }
+  const region = computeCoverCropRegion(
+    metadata.width,
+    metadata.height,
+    config.inputSize,
+    config.inputSize,
+    variant,
+  );
   const classifierRaw = await sharp(buffer)
-    .ensureAlpha()
-    .resize(CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE, {
-      fit: "cover",
-      position,
+    .extract({
+      left: region.left,
+      top: region.top,
+      width: region.width,
+      height: region.height,
+    })
+    .resize(config.inputSize, config.inputSize, {
+      fit: "fill",
       kernel: "lanczos3",
     })
-    .removeAlpha()
     .raw()
     .toBuffer();
 
   return {
-    modelTensor: computeClassifierTensor(classifierRaw),
-    modelShape: [1, CLASSIFIER_MODEL_CHANNELS, CLASSIFIER_MODEL_INPUT_SIZE, CLASSIFIER_MODEL_INPUT_SIZE],
+    modelTensor: computeNormalizedTensorFromRgbBuffer(classifierRaw, config),
+    modelShape: runtimeModelShape(config),
   };
-}
-
-function computeClassifierTensor(buffer: Buffer): number[] {
-  const pixelCount = CLASSIFIER_MODEL_INPUT_SIZE * CLASSIFIER_MODEL_INPUT_SIZE;
-  const tensor = new Array<number>(CLASSIFIER_MODEL_CHANNELS * pixelCount);
-  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
-    const offset = pixelIndex * 3;
-    tensor[pixelIndex] = (buffer[offset] / 255 - CLASSIFIER_MODEL_MEAN[0]) / CLASSIFIER_MODEL_STD[0];
-    tensor[pixelCount + pixelIndex] =
-      (buffer[offset + 1] / 255 - CLASSIFIER_MODEL_MEAN[1]) / CLASSIFIER_MODEL_STD[1];
-    tensor[pixelCount * 2 + pixelIndex] =
-      (buffer[offset + 2] / 255 - CLASSIFIER_MODEL_MEAN[2]) / CLASSIFIER_MODEL_STD[2];
-  }
-  return tensor;
 }

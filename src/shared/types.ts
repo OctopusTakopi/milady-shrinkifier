@@ -69,7 +69,7 @@ export interface DetectionResult {
 
 export interface WorkerRequest {
   id: string;
-  tensor?: number[];
+  tensor?: Float32Array;
   shape?: [number, number, number, number];
 }
 

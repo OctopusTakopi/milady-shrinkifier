@@ -1,4 +1,4 @@
 export interface RuntimeImageFeatures {
-  modelTensor: number[];
-  modelShape: [1, 3, 128, 128];
+  modelTensor: Float32Array;
+  modelShape: [1, number, number, number];
 }
