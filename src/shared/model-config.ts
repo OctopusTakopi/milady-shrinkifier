@@ -17,32 +17,13 @@ export interface CoverCropRegion {
   height: number;
 }
 
-const DEFAULT_RUNTIME_MODEL_CONFIG: RuntimeModelConfig = {
-  inputSize: 128,
-  channels: 3,
-  mean: [0.485, 0.456, 0.406],
-  std: [0.229, 0.224, 0.225],
-  positiveIndex: 1,
-};
-
 export function resolveRuntimeModelConfig(metadata: ModelMetadata): RuntimeModelConfig {
-  const inputSize = Number.isInteger(metadata.input_size) && metadata.input_size! > 0
-    ? metadata.input_size!
-    : DEFAULT_RUNTIME_MODEL_CONFIG.inputSize;
-  const channels = Number.isInteger(metadata.channels) && metadata.channels! > 0
-    ? metadata.channels!
-    : DEFAULT_RUNTIME_MODEL_CONFIG.channels;
-  const mean = isTriple(metadata.mean) ? metadata.mean : DEFAULT_RUNTIME_MODEL_CONFIG.mean;
-  const std = isTriple(metadata.std) ? metadata.std : DEFAULT_RUNTIME_MODEL_CONFIG.std;
-  const positiveIndex = Number.isInteger(metadata.positive_index) && metadata.positive_index! >= 0
-    ? metadata.positive_index!
-    : DEFAULT_RUNTIME_MODEL_CONFIG.positiveIndex;
   return {
-    inputSize,
-    channels,
-    mean,
-    std,
-    positiveIndex,
+    inputSize: metadata.input_size,
+    channels: metadata.channels,
+    mean: metadata.mean,
+    std: metadata.std,
+    positiveIndex: metadata.positive_index,
   };
 }
 
@@ -98,10 +79,4 @@ export function computeNormalizedTensorFromRgbBuffer(
   }
 
   return tensor;
-}
-
-function isTriple(value: unknown): value is [number, number, number] {
-  return Array.isArray(value)
-    && value.length === 3
-    && value.every((entry) => typeof entry === "number" && Number.isFinite(entry));
 }

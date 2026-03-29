@@ -115,7 +115,7 @@ def main() -> None:
                     WHERE normalized_url = ?
                     """,
                     (
-                        str(avatar.original_url or existing["original_url"]),
+                        avatar.original_url,
                         encode_json_list(merged_handles),
                         encode_json_list(merged_display_names),
                         encode_json_list(merged_sources),
@@ -152,13 +152,13 @@ def main() -> None:
                     """,
                     (
                         normalized_url,
-                        str(avatar.original_url or normalized_url),
+                        avatar.original_url,
                         encode_json_list(incoming_handles),
                         encode_json_list(incoming_display_names),
                         encode_json_list(incoming_source_surfaces),
                         avatar.seen_count,
-                        str(avatar.first_seen_at or now),
-                        str(avatar.last_seen_at or now),
+                        avatar.first_seen_at,
+                        avatar.last_seen_at,
                         avatar.example_profile_url,
                         avatar.example_notification_url,
                         avatar.example_tweet_url,
@@ -187,7 +187,7 @@ def main() -> None:
                 payload.exported_at,
                 now_iso(),
                 payload.version,
-                payload.avatar_count or len(avatars),
+                payload.avatar_count,
                 payload.total_sightings,
             ),
         )

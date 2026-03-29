@@ -5,7 +5,7 @@ import type { WorkerRequest, WorkerResponse } from "./shared/types";
 interface InitMessage {
   modelUrl: string;
   wasmPath: string;
-  positiveIndex?: number;
+  positiveIndex: number;
 }
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
@@ -17,17 +17,12 @@ self.addEventListener("message", (event: MessageEvent<InitMessage | WorkerReques
 
   if ("modelUrl" in data) {
     ort.env.wasm.wasmPaths = data.wasmPath;
-    positiveIndex = typeof data.positiveIndex === "number" ? data.positiveIndex : 1;
+    positiveIndex = data.positiveIndex;
     sessionPromise = ort.InferenceSession.create(data.modelUrl, {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all",
     });
     runQueue = Promise.resolve();
-    return;
-  }
-
-  if (!data.tensor || !data.shape) {
-    postErrorResponse(data.id, new Error("Worker received no tensor payload"));
     return;
   }
 
@@ -41,9 +36,6 @@ self.addEventListener("message", (event: MessageEvent<InitMessage | WorkerReques
 async function handleInferenceRequest(request: WorkerRequest): Promise<void> {
   if (!sessionPromise) {
     throw new Error("Worker used before model initialization");
-  }
-  if (!request.tensor || !request.shape) {
-    throw new Error("Worker received no tensor payload");
   }
 
   const session = await sessionPromise;

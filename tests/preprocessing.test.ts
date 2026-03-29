@@ -10,10 +10,18 @@ import { computeNodeImageFeatures } from "../src/shared/node-image";
 import type { ModelMetadata } from "../src/shared/types";
 
 describe("runtime preprocessing", () => {
-  it("resolves runtime model config from metadata with defaults", () => {
+  it("resolves runtime model config from metadata", () => {
     const metadata: ModelMetadata = {
+      architecture: "mobilenet_v3_small",
+      class_names: ["not_milady", "milady"],
+      input_size: 128,
+      channels: 3,
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
+      positive_index: 1,
       generated_at: "2026-03-29T00:00:00Z",
       threshold: 0.5,
+      run_id: "run-id",
     };
     expect(resolveRuntimeModelConfig(metadata)).toEqual({
       inputSize: 128,
@@ -66,12 +74,16 @@ describe("runtime preprocessing", () => {
     const features = await computeNodeImageFeatures(
       image,
       resolveRuntimeModelConfig({
+        architecture: "mobilenet_v3_small",
+        class_names: ["not_milady", "milady"],
         generated_at: "2026-03-29T00:00:00Z",
         threshold: 0.5,
         input_size: 32,
         channels: 3,
         mean: [0.485, 0.456, 0.406],
         std: [0.229, 0.224, 0.225],
+        positive_index: 1,
+        run_id: "run-id",
       }),
       "center",
     );

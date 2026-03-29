@@ -62,13 +62,13 @@ def encode_string_list(values: list[str]) -> str:
 
 class IngestExportAvatar(msgspec.Struct, omit_defaults=True, kw_only=True):
     normalized_url: str
-    original_url: str | None = None
+    original_url: str
     handles: list[str] = msgspec.field(default_factory=list)
     display_names: list[str] = msgspec.field(default_factory=list)
     source_surfaces: list[str] = msgspec.field(default_factory=list)
     seen_count: int = 0
-    first_seen_at: str | None = None
-    last_seen_at: str | None = None
+    first_seen_at: str
+    last_seen_at: str
     example_profile_url: str | None = None
     example_notification_url: str | None = None
     example_tweet_url: str | None = None
@@ -77,9 +77,9 @@ class IngestExportAvatar(msgspec.Struct, omit_defaults=True, kw_only=True):
 
 class IngestExportPayload(msgspec.Struct, omit_defaults=True, kw_only=True):
     version: int
-    exported_at: str | None = None
-    avatar_count: int = 0
-    total_sightings: int = 0
+    exported_at: str
+    avatar_count: int
+    total_sightings: int
     avatars: list[IngestExportAvatar] = msgspec.field(default_factory=list)
 
 
@@ -266,16 +266,16 @@ class RunSummary(msgspec.Struct, omit_defaults=True, kw_only=True):
 
 
 class PublicModelMetadata(msgspec.Struct, omit_defaults=True, kw_only=True):
-    architecture: str | None = None
+    architecture: str
     generated_at: str
-    input_size: int | None = None
-    channels: int | None = None
-    class_names: list[str] | None = None
-    mean: list[float] | None = None
-    std: list[float] | None = None
-    positive_index: int | None = None
+    input_size: int
+    channels: int
+    class_names: list[str]
+    mean: list[float]
+    std: list[float]
+    positive_index: int
     threshold: float
-    run_id: str | None = None
+    run_id: str
 
 
 class CompareErrorItem(msgspec.Struct, kw_only=True):

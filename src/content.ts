@@ -684,7 +684,7 @@ async function getWorker(resolvedModel: ResolvedModel): Promise<Worker> {
         return;
       }
       pendingWorker.delete(event.data.id);
-      if (event.data.error) {
+      if ("error" in event.data) {
         pending.reject(new Error(event.data.error));
         return;
       }

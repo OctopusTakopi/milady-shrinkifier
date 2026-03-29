@@ -227,12 +227,7 @@ def load_default_run_id() -> str:
             "No default promoted model metadata found. Pass --run-id explicitly or export a promoted model first."
         )
     payload = load_json(PUBLIC_METADATA_PATH, PublicModelMetadata)
-    run_id = payload.run_id
-    if not run_id:
-        raise SystemExit(
-            f"Promoted model metadata at {PUBLIC_METADATA_PATH} does not contain a valid run_id."
-        )
-    return run_id
+    return payload.run_id
 
 
 def validate_args(args: argparse.Namespace) -> None:

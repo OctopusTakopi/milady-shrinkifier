@@ -42,16 +42,16 @@ export interface CollectedAvatar {
 export type CollectedAvatarMap = Record<string, CollectedAvatar>;
 
 export interface ModelMetadata {
-  architecture?: string;
-  class_names?: string[];
-  input_size?: number;
-  channels?: number;
-  mean?: [number, number, number];
-  std?: [number, number, number];
-  positive_index?: number;
+  architecture: string;
+  class_names: [string, string];
+  input_size: number;
+  channels: number;
+  mean: [number, number, number];
+  std: [number, number, number];
+  positive_index: number;
   generated_at: string;
   threshold: number;
-  run_id?: string;
+  run_id: string;
 }
 
 export interface DetectionResult {
@@ -61,14 +61,21 @@ export interface DetectionResult {
   debugLabel?: string | null;
 }
 
-export interface WorkerRequest {
+export interface WorkerInferenceRequest {
   id: string;
-  tensor?: Float32Array;
-  shape?: [number, number, number, number];
+  tensor: Float32Array;
+  shape: [number, number, number, number];
 }
 
-export interface WorkerResponse {
+export interface WorkerSuccessResponse {
   id: string;
-  score?: number;
-  error?: string;
+  score: number;
 }
+
+export interface WorkerErrorResponse {
+  id: string;
+  error: string;
+}
+
+export type WorkerRequest = WorkerInferenceRequest;
+export type WorkerResponse = WorkerSuccessResponse | WorkerErrorResponse;
