@@ -363,6 +363,14 @@ a {
 .sidebar-panel label {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.sidebar-panel select,
+.toolbar-inline select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .loading-copy {
