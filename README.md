@@ -4,6 +4,8 @@
 
 ![hero](assets/hero.png)
 
+A Chrome extension that detects Milady-style avatars on Twitter/X and lets you hide or fade matching posts. Runs entirely in your browser.
+
 ## Why
 
 Some people find that a significant percentage of their timeline consists of accounts using aesthetically identical chibi avatars posting aesthetically identical content. This extension addresses that.
