@@ -42,7 +42,7 @@ The extension exports collected avatars as JSON manifests. The offline pipeline 
 Split policy:
 - blind `val` / `test` prioritize manual export labels and held-out collection positives
 - routine training uses real exported avatars, scored hard cases, and a reduced-weight collection corpus
-- silver labels stay in the training pool with a reduced sample weight
+- `manual` labels are gold, `model_reviewed` labels are trusted, and `silver` labels stay weak
 
 Typical loop:
 
@@ -74,4 +74,4 @@ Recommended review order after scoring:
 
 `uv run milady label-silver` is conservative by default: it only auto-labels unlabeled images with extremely low model scores as weak `not_milady` examples. Those silver labels are train-only and are never used for blind validation or test.
 
-In the review UI, pick a scored `run_id` first. Queue ranking, disagreement flags, and 9-up batch defaults are all tied to that selected run.
+In the review UI, pick a scored `run_id` first. Queue ranking, disagreement flags, and 9-up batch defaults are all tied to that selected run. Individual review writes `manual` labels; batch review writes `model_reviewed` labels so fast confirm/correct work stays distinct from gold adjudication.

@@ -51,6 +51,7 @@ LABELED_GRID_FILTERS = ("all", "milady", "not_milady", "unclear")
 class ReviewItem:
     sha256: str
     label: str | None
+    label_source: str | None
     local_path: str
     byte_size: int | None
     width: int | None
@@ -77,6 +78,7 @@ class ReviewItem:
         return {
             "sha256": self.sha256,
             "label": self.label,
+            "labelSource": self.label_source,
             "localPath": self.local_path,
             "byteSize": self.byte_size,
             "width": self.width,
@@ -607,6 +609,7 @@ def load_review_items(connection: sqlite3.Connection, run_id: str | None = None)
             ReviewItem(
                 sha256=sha256,
                 label=human_label,
+                label_source=str(image_row["label_source"]) if image_row["label_source"] is not None else None,
                 local_path=str(image_row["local_path"]),
                 byte_size=int(image_row["byte_size"]) if image_row["byte_size"] is not None else None,
                 width=int(image_row["width"]) if image_row["width"] is not None else None,

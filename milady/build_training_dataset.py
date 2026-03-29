@@ -35,7 +35,9 @@ LABEL_TIER_PRIORITY = {
 }
 WEAK_LABEL_WEIGHT = 0.35
 TRUSTED_COLLECTION_WEIGHT = 0.5
+TRUSTED_MODEL_REVIEWED_WEIGHT = 0.7
 GOLD_LABEL_SOURCE = "manual"
+TRUSTED_LABEL_SOURCES = {"model_reviewed"}
 WEAK_LABEL_SOURCES = {"silver"}
 PERCEPTUAL_HASH_HAMMING_THRESHOLD = 4
 COLLECTION_HOLDOUT_VAL_COUNT = 64
@@ -266,15 +268,17 @@ def main() -> None:
                 "version": 2,
                 "generatedAt": now_iso(),
                 "mode": manifest_mode,
-                "evaluationPolicy": {
-                    "blindEvalRequiresGoldOnly": False,
-                    "blindEvalIncludesCollectionHoldoutPositives": True,
-                    "goldLabelSource": GOLD_LABEL_SOURCE,
-                    "weakLabelWeight": WEAK_LABEL_WEIGHT,
-                    "trustedCollectionWeight": TRUSTED_COLLECTION_WEIGHT,
-                    "collectionBlindHoldoutValCount": COLLECTION_HOLDOUT_VAL_COUNT,
-                    "collectionBlindHoldoutTestCount": COLLECTION_HOLDOUT_TEST_COUNT,
-                },
+                    "evaluationPolicy": {
+                        "blindEvalRequiresGoldOnly": False,
+                        "blindEvalIncludesCollectionHoldoutPositives": True,
+                        "goldLabelSource": GOLD_LABEL_SOURCE,
+                        "trustedLabelSources": sorted(TRUSTED_LABEL_SOURCES),
+                        "weakLabelWeight": WEAK_LABEL_WEIGHT,
+                        "trustedCollectionWeight": TRUSTED_COLLECTION_WEIGHT,
+                        "trustedModelReviewedWeight": TRUSTED_MODEL_REVIEWED_WEIGHT,
+                        "collectionBlindHoldoutValCount": COLLECTION_HOLDOUT_VAL_COUNT,
+                        "collectionBlindHoldoutTestCount": COLLECTION_HOLDOUT_TEST_COUNT,
+                    },
                 "ratios": {
                     "train": args.train_ratio,
                     "val": args.val_ratio,
@@ -323,7 +327,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
         FROM images
         WHERE label IN ('milady', 'not_milady')
           AND local_path IS NOT NULL
-          AND label_source IN ('manual', 'silver')
+          AND label_source IN ('manual', 'model_reviewed', 'silver')
         ORDER BY sha256 ASC
         """
     ).fetchall()
@@ -347,7 +351,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
                 perceptual_hash=fingerprint.perceptual_hash,
                 label_source=label_source,
                 label_tier=label_tier,
-                sample_weight=sample_weight_for_label_tier(label_tier),
+                sample_weight=sample_weight_for_export_label_source(label_source, label_tier),
                 blind_eval_eligible=label_tier == "gold",
                 exported_sha=str(row["sha256"]),
             )
@@ -587,13 +591,19 @@ def hamming_distance(left: int, right: int) -> int:
 def label_tier_for_export_label_source(label_source: str) -> str:
     if label_source == GOLD_LABEL_SOURCE:
         return "gold"
+    if label_source in TRUSTED_LABEL_SOURCES:
+        return "trusted"
     if label_source in WEAK_LABEL_SOURCES:
         return "weak"
     raise SystemExit(f"Unsupported exported label source for dataset build: {label_source}")
 
 
-def sample_weight_for_label_tier(label_tier: str) -> float:
-    return WEAK_LABEL_WEIGHT if label_tier == "weak" else 1.0
+def sample_weight_for_export_label_source(label_source: str, label_tier: str) -> float:
+    if label_source in TRUSTED_LABEL_SOURCES:
+        return TRUSTED_MODEL_REVIEWED_WEIGHT
+    if label_tier == "weak":
+        return WEAK_LABEL_WEIGHT
+    return 1.0
 
 
 def sample_sort_key(sample: SampleRecord) -> tuple[int, str]:

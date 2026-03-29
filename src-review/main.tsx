@@ -21,6 +21,7 @@ type LabeledGridFilter = "all" | ReviewLabel;
 interface ReviewItem {
   sha256: string;
   label: ReviewLabel | null;
+  labelSource: string | null;
   localPath: string;
   byteSize: number | null;
   width: number | null;
@@ -249,7 +250,7 @@ function renderStatusPills(item: ReviewItem) {
   }
   if (item.label) {
     pills.push({
-      text: `human ${item.label}`,
+      text: `${item.labelSource ?? "human"} ${item.label}`,
       tone: item.label === "not_milady" ? "good" : "warn",
     });
   }
@@ -263,6 +264,7 @@ function metadataRows(item: ReviewItem): Array<{ label: string; value: string | 
   return [
     { label: "sha256", value: item.sha256 },
     { label: "label", value: item.label ?? "unlabeled" },
+    { label: "label source", value: item.labelSource ?? "n/a" },
     { label: "labeled at", value: item.labeledAt ?? "n/a" },
     { label: "handles", value: item.handles.join(", ") || "none" },
     { label: "display names", value: item.displayNames.join(", ") || "none" },
@@ -871,7 +873,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div class="hint">Numpad cycles labels, left/right moves batches, Enter commits or advances.</div>
+              <div class="hint">Numpad cycles labels, left/right moves batches, Enter commits or advances. Batch labels are stored as model_reviewed.</div>
               <div class="batch-panel">
                 <Show when={batchAssignments().length > 0} fallback={<p class="empty-copy">No items in this queue.</p>}>
                   <div class="batch-grid">
