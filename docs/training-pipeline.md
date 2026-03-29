@@ -124,19 +124,19 @@ The UI starts with a `Run` selector. Pick the scored run you want to improve. Qu
 
 The most useful queues are:
 
-- **Uncertain unlabeled**
+- **Boundary unlabeled**
   Items closest to the current threshold. These are the best gold-label candidates because they shape the decision boundary.
 
-- **High-score false positives**
+- **Hard negatives**
   Items already labeled `not_milady` that the model still scores highly. These are strong failure examples.
 
-- **Human vs model**
+- **Model disagreements**
   Items where the human label disagrees with the selected run.
 
-- **High-score unlabeled**
-  Strong model-positive candidates that have not been reviewed yet.
+- **Residual unlabeled**
+  The highest-scoring items left in the unlabeled pool. As the model improves, this often becomes a low-priority backlog rather than a stream of likely positives.
 
-- **Unlabeled**
+- **Unreviewed**
   The general backlog. This is lower-yield than the score-driven queues.
 
 ### Review Trust Levels

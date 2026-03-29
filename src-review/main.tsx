@@ -110,14 +110,14 @@ type VirtualGridRow =
   | { kind: "items"; key: string; items: ReviewItem[] };
 
 const queueLabels: Record<QueueName, string> = {
-  unlabeled: "Unlabeled",
-  human_vs_model: "Human vs model",
-  whitelisted: "Whitelisted",
-  high_seen_count: "High seen count",
-  notification_group: "Notification group",
-  uncertain_unlabeled: "Uncertain unlabeled",
-  high_score_unlabeled: "Top-score unlabeled",
-  high_score_false_positive: "High-score false positives",
+  unlabeled: "Unreviewed",
+  human_vs_model: "Model disagreements",
+  whitelisted: "Exempted",
+  high_seen_count: "High-impact",
+  notification_group: "Notifications",
+  uncertain_unlabeled: "Boundary unlabeled",
+  high_score_unlabeled: "Residual unlabeled",
+  high_score_false_positive: "Hard negatives",
 };
 
 const labeledGridLabels: Record<LabeledGridFilter, string> = {

@@ -68,12 +68,12 @@ pnpm run build
 `uv run milady ingest` scans `cache/ingest/*.json` by default and archives those manifests into `cache/exports/raw/` as it ingests them. You can still pass explicit JSON paths when needed.
 
 Recommended review order after scoring:
-- `High-score false positives`
-- `Human vs model`
-- `Uncertain unlabeled`
-- `Notification group`
-- `High seen count`
-- `Unlabeled`
-- `Top-score unlabeled`
+- `Hard negatives`
+- `Model disagreements`
+- `Boundary unlabeled`
+- `Notifications`
+- `High-impact`
+- `Unreviewed`
+- `Residual unlabeled`
 
 In the review UI, pick a scored `run_id` first. Queue ranking, disagreement flags, and 9-up batch defaults are all tied to that selected run. Individual review writes `manual` labels; batch review writes `model_reviewed` labels so fast confirm/correct work stays distinct from gold adjudication.
