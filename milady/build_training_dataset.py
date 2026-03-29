@@ -31,14 +31,11 @@ SOURCE_PRIORITY = {
 LABEL_TIER_PRIORITY = {
     "gold": 0,
     "trusted": 1,
-    "weak": 2,
 }
-WEAK_LABEL_WEIGHT = 0.35
 TRUSTED_COLLECTION_WEIGHT = 0.5
 TRUSTED_MODEL_REVIEWED_WEIGHT = 0.7
 GOLD_LABEL_SOURCE = "manual"
 TRUSTED_LABEL_SOURCES = {"model_reviewed"}
-WEAK_LABEL_SOURCES = {"silver"}
 PERCEPTUAL_HASH_HAMMING_THRESHOLD = 4
 COLLECTION_HOLDOUT_VAL_COUNT = 64
 COLLECTION_HOLDOUT_TEST_COUNT = 64
@@ -257,7 +254,6 @@ def main() -> None:
                     "not_milady": sum(1 for entry in entries if entry.label == "not_milady"),
                     "gold": sum(1 for entry in entries if entry.label_tier == "gold"),
                     "trusted": sum(1 for entry in entries if entry.label_tier == "trusted"),
-                    "weak": sum(1 for entry in entries if entry.label_tier == "weak"),
                 }
                 for split_name, entries in by_split.items()
             },
@@ -273,7 +269,6 @@ def main() -> None:
                         "blindEvalIncludesCollectionHoldoutPositives": True,
                         "goldLabelSource": GOLD_LABEL_SOURCE,
                         "trustedLabelSources": sorted(TRUSTED_LABEL_SOURCES),
-                        "weakLabelWeight": WEAK_LABEL_WEIGHT,
                         "trustedCollectionWeight": TRUSTED_COLLECTION_WEIGHT,
                         "trustedModelReviewedWeight": TRUSTED_MODEL_REVIEWED_WEIGHT,
                         "collectionBlindHoldoutValCount": COLLECTION_HOLDOUT_VAL_COUNT,
@@ -327,7 +322,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
         FROM images
         WHERE label IN ('milady', 'not_milady')
           AND local_path IS NOT NULL
-          AND label_source IN ('manual', 'model_reviewed', 'silver')
+          AND label_source IN ('manual', 'model_reviewed')
         ORDER BY sha256 ASC
         """
     ).fetchall()
@@ -351,7 +346,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
                 perceptual_hash=fingerprint.perceptual_hash,
                 label_source=label_source,
                 label_tier=label_tier,
-                sample_weight=sample_weight_for_export_label_source(label_source, label_tier),
+                sample_weight=sample_weight_for_export_label_source(label_source),
                 blind_eval_eligible=label_tier == "gold",
                 exported_sha=str(row["sha256"]),
             )
@@ -593,16 +588,12 @@ def label_tier_for_export_label_source(label_source: str) -> str:
         return "gold"
     if label_source in TRUSTED_LABEL_SOURCES:
         return "trusted"
-    if label_source in WEAK_LABEL_SOURCES:
-        return "weak"
     raise SystemExit(f"Unsupported exported label source for dataset build: {label_source}")
 
 
-def sample_weight_for_export_label_source(label_source: str, label_tier: str) -> float:
+def sample_weight_for_export_label_source(label_source: str) -> float:
     if label_source in TRUSTED_LABEL_SOURCES:
         return TRUSTED_MODEL_REVIEWED_WEIGHT
-    if label_tier == "weak":
-        return WEAK_LABEL_WEIGHT
     return 1.0
 
 

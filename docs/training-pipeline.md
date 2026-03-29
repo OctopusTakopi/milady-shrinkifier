@@ -19,7 +19,7 @@ The pipeline is:
 
 ## Data Sources
 
-The model trains on three main sources:
+The model trains on two main sources:
 
 1. **Exported avatars**
    Real avatars collected from X. This is the highest-value data because it matches the production environment.
@@ -31,9 +31,6 @@ The model trains on three main sources:
    - `pixelady`
 
    These are useful positives, but they are cleaner than real exported avatars, so they are downweighted during training.
-
-3. **Silver labels**
-   Weak labels generated automatically from extreme-confidence model predictions. These are mainly used for obvious negatives.
 
 ## Step 1: Export From The Extension
 
@@ -144,16 +141,13 @@ The most useful queues are:
 
 ### Review Trust Levels
 
-The review pipeline distinguishes between three kinds of exported labels:
+The review pipeline distinguishes between two kinds of exported labels:
 
 - **`manual`**
   Written by individual review. These are treated as gold labels.
 
 - **`model_reviewed`**
   Written by batch review. These are human-confirmed model suggestions and are treated as trusted labels.
-
-- **`silver`**
-  Fully automatic weak labels.
 
 Fast batch confirmation is useful, but it should not count as the same quality of signal as careful manual adjudication.
 
@@ -174,21 +168,7 @@ Individual review is for:
 
 Those labels are written as `manual`.
 
-## Step 6: Optional Silver Labels
-
-Run:
-
-```bash
-uv run milady label-silver --run-id <run-id>
-```
-
-Today this is mainly used for extremely low-score negatives. Silver labels are:
-
-- train-only
-- weakly weighted
-- excluded from blind validation and test
-
-## Step 7: Build The Dataset
+## Step 6: Build The Dataset
 
 Run:
 
@@ -229,33 +209,29 @@ The split policy is intentionally asymmetric:
 
 - blind `val` and `test` prioritize manually labeled exported avatars
 - held-out collection positives are included as a fixed extra positive slice
-- routine training uses the larger mix of exported labels, reviewed labels, silver labels, and collection positives
+- routine training uses the larger mix of exported labels, reviewed labels, and collection positives
 
-## Step 8: Trust Tiers And Weights
+## Step 7: Trust Tiers And Weights
 
-The training set uses three trust tiers:
+The training set uses two trust tiers for exported labels:
 
 - **Gold**
   full manual exported labels
 - **Trusted**
   human-confirmed batch labels and collection corpus samples
-- **Weak**
-  silver labels
 
 Current weights are:
 
 - `manual`: `1.0`
 - `model_reviewed`: `0.7`
-- `silver`: `0.35`
 - collection corpus positives: `0.5`
 
 The intended effect is:
 
 - gold labels dominate
 - trusted labels matter, but less
-- weak labels shape the boundary without steering it too strongly
 
-## Step 9: Train A Candidate
+## Step 8: Train A Candidate
 
 Run:
 
@@ -276,7 +252,7 @@ That run directory contains:
 
 The trainer uses the same image preprocessing logic as the extension runtime so offline metrics match deployed behavior.
 
-## Step 10: Compare Before Promotion
+## Step 9: Compare Before Promotion
 
 After training, rescore and compare:
 
@@ -297,7 +273,7 @@ This is where you find out whether the next improvement should come from:
 - threshold changes
 - data weighting changes
 
-## Step 11: Promote The Winner
+## Step 10: Promote The Winner
 
 If the candidate is better, export it back into the extension:
 
