@@ -663,12 +663,12 @@ function App() {
         cycleBatchLabel(numpadIndex);
         return;
       }
-      if (event.key === "ArrowLeft") {
+      if (event.key === "[") {
         event.preventDefault();
         moveBatchSelection(-1);
         return;
       }
-      if (event.key === "ArrowRight") {
+      if (event.key === "]") {
         event.preventDefault();
         moveBatchSelection(1);
         return;
@@ -877,7 +877,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div class="hint">Numpad cycles labels, left/right moves selection, Enter commits or advances.</div>
+              <div class="hint">Numpad cycles labels, [ and ] moves selection, Enter commits or advances.</div>
               <div class="batch-panel">
                 <Show when={batchAssignments().length > 0} fallback={<p class="empty-copy">No items in this queue.</p>}>
                   <div class="batch-grid">
