@@ -34,14 +34,14 @@ CATALOG_PATH = DATASET_ROOT / "avatar_catalog.sqlite"
 PUBLIC_MODEL_PATH = PROJECT_ROOT / "public" / "models" / "milady-mobilenetv3-small.onnx"
 PUBLIC_METADATA_PATH = PROJECT_ROOT / "public" / "generated" / "milady-mobilenetv3-small.meta.json"
 REVIEW_QUEUES = (
-    "unlabeled",
-    "human_vs_model",
-    "whitelisted",
-    "high_seen_count",
-    "notification_group",
-    "uncertain_unlabeled",
-    "high_score_unlabeled",
-    "high_score_false_positive",
+    "unreviewed",
+    "model_disagreements",
+    "exempted",
+    "high_impact",
+    "notifications",
+    "boundary_unlabeled",
+    "residual_unlabeled",
+    "hard_negatives",
 )
 LABELS = ("milady", "not_milady", "unclear")
 LABELED_GRID_FILTERS = ("all", "milady", "not_milady", "unclear")
@@ -648,7 +648,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
     if queue_name not in REVIEW_QUEUES:
         raise ValueError(f"Unsupported review queue: {queue_name}")
 
-    if queue_name == "unlabeled":
+    if queue_name == "unreviewed":
         filtered = [item for item in items if item.label is None]
         return sorted(
             filtered,
@@ -660,7 +660,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             reverse=True,
         )
 
-    if queue_name == "human_vs_model":
+    if queue_name == "model_disagreements":
         return sorted(
             (item for item in items if "human_vs_model" in item.disagreement_flags),
             key=lambda item: (
@@ -671,20 +671,20 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             reverse=True,
         )
 
-    if queue_name == "whitelisted":
+    if queue_name == "exempted":
         return sorted((item for item in items if item.whitelisted), key=lambda item: item.seen_count, reverse=True)
 
-    if queue_name == "high_seen_count":
+    if queue_name == "high_impact":
         return sorted(items, key=lambda item: item.seen_count, reverse=True)
 
-    if queue_name == "notification_group":
+    if queue_name == "notifications":
         return sorted(
             (item for item in items if "notification-group" in item.source_surfaces),
             key=lambda item: item.seen_count,
             reverse=True,
         )
 
-    if queue_name == "uncertain_unlabeled":
+    if queue_name == "boundary_unlabeled":
         return sorted(
             (
                 item
@@ -700,7 +700,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             ),
         )
 
-    if queue_name == "high_score_unlabeled":
+    if queue_name == "residual_unlabeled":
         return sorted(
             (
                 item

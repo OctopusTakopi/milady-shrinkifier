@@ -7,14 +7,14 @@ import { render } from "solid-js/web";
 
 type ReviewLabel = "milady" | "not_milady" | "unclear";
 type QueueName =
-  | "unlabeled"
-  | "human_vs_model"
-  | "whitelisted"
-  | "high_seen_count"
-  | "notification_group"
-  | "uncertain_unlabeled"
-  | "high_score_unlabeled"
-  | "high_score_false_positive";
+  | "unreviewed"
+  | "model_disagreements"
+  | "exempted"
+  | "high_impact"
+  | "notifications"
+  | "boundary_unlabeled"
+  | "residual_unlabeled"
+  | "hard_negatives";
 type GridSource = "queue" | "labeled";
 type LabeledGridFilter = "all" | ReviewLabel;
 
@@ -110,14 +110,14 @@ type VirtualGridRow =
   | { kind: "items"; key: string; items: ReviewItem[] };
 
 const queueLabels: Record<QueueName, string> = {
-  unlabeled: "Unreviewed",
-  human_vs_model: "Model disagreements",
-  whitelisted: "Exempted",
-  high_seen_count: "High-impact",
-  notification_group: "Notifications",
-  uncertain_unlabeled: "Boundary unlabeled",
-  high_score_unlabeled: "Residual unlabeled",
-  high_score_false_positive: "Hard negatives",
+  unreviewed: "Unreviewed",
+  model_disagreements: "Model disagreements",
+  exempted: "Exempted",
+  high_impact: "High-impact",
+  notifications: "Notifications",
+  boundary_unlabeled: "Boundary unlabeled",
+  residual_unlabeled: "Residual unlabeled",
+  hard_negatives: "Hard negatives",
 };
 
 const labeledGridLabels: Record<LabeledGridFilter, string> = {
@@ -148,33 +148,33 @@ const numpadIndexMap: Record<string, number> = {
 const batchLabelOrder: ReviewLabel[] = ["not_milady", "milady", "unclear"];
 const gridOrder: GroupLabel[] = ["unlabeled", "milady", "not_milady", "unclear"];
 const gridGroupLabels: Record<GroupLabel, string> = {
-  unlabeled: "Unlabeled",
+  unlabeled: "Unreviewed",
   milady: "Milady",
   not_milady: "Not Milady",
   unclear: "Unclear",
 };
 const preferredQueueOrder: QueueName[] = [
-  "high_score_false_positive",
-  "human_vs_model",
-  "uncertain_unlabeled",
-  "notification_group",
-  "high_seen_count",
-  "unlabeled",
-  "high_score_unlabeled",
-  "whitelisted",
+  "hard_negatives",
+  "model_disagreements",
+  "boundary_unlabeled",
+  "notifications",
+  "high_impact",
+  "unreviewed",
+  "residual_unlabeled",
+  "exempted",
 ];
 const queueGroups: Array<{ label: string; queues: QueueName[] }> = [
   {
     label: "Priority Review",
-    queues: ["high_score_false_positive", "human_vs_model", "uncertain_unlabeled", "notification_group", "high_seen_count"],
+    queues: ["hard_negatives", "model_disagreements", "boundary_unlabeled", "notifications", "high_impact"],
   },
   {
     label: "Backlog",
-    queues: ["unlabeled", "high_score_unlabeled"],
+    queues: ["unreviewed", "residual_unlabeled"],
   },
   {
     label: "Audit",
-    queues: ["whitelisted"],
+    queues: ["exempted"],
   },
 ];
 const queryClient = new QueryClient({
@@ -316,12 +316,12 @@ function metadataRows(item: ReviewItem): Array<{ label: string; value: string | 
 
 function App() {
   const queryClient = useQueryClient();
-  const [queue, setQueue] = createSignal<QueueName>("unlabeled");
+  const [queue, setQueue] = createSignal<QueueName>("unreviewed");
   const [index, setIndex] = createSignal(0);
   const [selectedSha, setSelectedSha] = createSignal<string | null>(null);
   const [activeView, setActiveView] = createSignal<"individual" | "batch">("individual");
   const [gridSource, setGridSource] = createSignal<GridSource>("queue");
-  const [gridFilter, setGridFilter] = createSignal<string>("unlabeled");
+  const [gridFilter, setGridFilter] = createSignal<string>("unreviewed");
   const [selectedBatchIndex, setSelectedBatchIndex] = createSignal(0);
   const [batchAssignments, setBatchAssignments] = createSignal<BatchAssignment[]>([]);
   const [batchOffset, setBatchOffset] = createSignal(0);
@@ -344,12 +344,12 @@ function App() {
       setSelectedRunId(summary.selectedRunId);
     }
 
-    const preferredQueue = preferredQueueOrder.find((candidate) => (summary.queueCounts[candidate] ?? 0) > 0) ?? "unlabeled";
+    const preferredQueue = preferredQueueOrder.find((candidate) => (summary.queueCounts[candidate] ?? 0) > 0) ?? "unreviewed";
 
     if (!(queue() in summary.queueCounts)) {
       setQueue(preferredQueue);
       setIndex(0);
-    } else if (queue() === "unlabeled" && preferredQueue !== "unlabeled" && (summary.queueCounts.unlabeled ?? 0) === 0) {
+    } else if (queue() === "unreviewed" && preferredQueue !== "unreviewed" && (summary.queueCounts.unreviewed ?? 0) === 0) {
       setQueue(preferredQueue);
       setIndex(0);
     }
@@ -357,7 +357,7 @@ function App() {
     if (gridSource() === "queue") {
       if (!(gridFilter() in summary.queueCounts)) {
         setGridFilter(queue());
-      } else if (gridFilter() === "unlabeled" && preferredQueue !== "unlabeled" && (summary.queueCounts.unlabeled ?? 0) === 0) {
+      } else if (gridFilter() === "unreviewed" && preferredQueue !== "unreviewed" && (summary.queueCounts.unreviewed ?? 0) === 0) {
         setGridFilter(preferredQueue);
       }
     } else if (!(gridFilter() in labeledGridLabels)) {
@@ -410,10 +410,10 @@ function App() {
       return "Loading summary…";
     }
     const queueCount = activeQueueCount();
-    if (queue() === "unlabeled") {
-      return `${summary.totalImages} images, ${queueCount} unlabeled, run ${summary.selectedRunId ?? "unscored"}`;
+    if (queue() === "unreviewed") {
+      return `${summary.totalImages} images, ${queueCount} unreviewed, run ${summary.selectedRunId ?? "unscored"}`;
     }
-    return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queue()].toLowerCase()}, ${summary.unlabeled} unlabeled overall, run ${summary.selectedRunId ?? "unscored"}`;
+    return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queue()].toLowerCase()}, ${summary.unlabeled} unreviewed overall, run ${summary.selectedRunId ?? "unscored"}`;
   });
 
   const currentHeading = createMemo(() => {
@@ -1055,7 +1055,7 @@ function App() {
                                           {(scoreText) => <span class="thumb-score-badge">{scoreText()}</span>}
                                         </Show>
                                       </div>
-                                      <span class="thumb-label">{item.label ? labelDisplay[item.label] : "unlabeled"}</span>
+                                      <span class="thumb-label">{item.label ? labelDisplay[item.label] : "unreviewed"}</span>
                                     </button>
                                   )}
                                 </For>
