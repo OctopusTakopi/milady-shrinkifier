@@ -116,7 +116,7 @@ const queueLabels: Record<QueueName, string> = {
   high_seen_count: "High seen count",
   notification_group: "Notification group",
   uncertain_unlabeled: "Uncertain unlabeled",
-  high_score_unlabeled: "High-score unlabeled",
+  high_score_unlabeled: "Top-score unlabeled",
   high_score_false_positive: "High-score false positives",
 };
 
@@ -154,20 +154,27 @@ const gridGroupLabels: Record<GroupLabel, string> = {
   unclear: "Unclear",
 };
 const preferredQueueOrder: QueueName[] = [
-  "uncertain_unlabeled",
   "high_score_false_positive",
   "human_vs_model",
-  "high_score_unlabeled",
+  "uncertain_unlabeled",
+  "notification_group",
+  "high_seen_count",
   "unlabeled",
+  "high_score_unlabeled",
+  "whitelisted",
 ];
 const queueGroups: Array<{ label: string; queues: QueueName[] }> = [
   {
-    label: "Labeling",
-    queues: ["uncertain_unlabeled", "high_score_false_positive", "high_score_unlabeled", "unlabeled"],
+    label: "Priority Review",
+    queues: ["high_score_false_positive", "human_vs_model", "uncertain_unlabeled", "notification_group", "high_seen_count"],
+  },
+  {
+    label: "Backlog",
+    queues: ["unlabeled", "high_score_unlabeled"],
   },
   {
     label: "Audit",
-    queues: ["human_vs_model", "whitelisted", "notification_group", "high_seen_count"],
+    queues: ["whitelisted"],
   },
 ];
 const queryClient = new QueryClient({
