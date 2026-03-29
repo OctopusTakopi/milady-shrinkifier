@@ -12,6 +12,7 @@ from .pipeline_common import MODEL_COMPARE_ROOT, MODEL_RUN_ROOT, SPLIT_MANIFEST_
 
 HEADLINE_EVAL_POLICY = "manual_export_gold_plus_collection_positive_holdout"
 ALL_MANUAL_EVAL_POLICY = "all_manual_export_labels"
+ALL_EXPORTED_EVAL_POLICY = "all_exported_labels"
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,9 +23,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, help="Optional output directory. Defaults under cache/models/.../compare.")
     parser.add_argument(
         "--eval-set",
-        choices=("blind", "all-manual"),
+        choices=("blind", "all-manual", "all-exported"),
         default="blind",
-        help="Evaluation population: blind val/test splits, or all deduped manually labeled exported avatars.",
+        help="Evaluation population: blind val/test splits, all deduped manually labeled exported avatars, or all deduped exported avatars including model labels.",
     )
     return parser.parse_args()
 
@@ -148,10 +149,17 @@ def load_evaluation_entries(eval_set: str) -> tuple[list, list, str]:
     if eval_set == "all-manual":
         entries = load_all_manual_export_entries()
         return entries, entries, ALL_MANUAL_EVAL_POLICY
+    if eval_set == "all-exported":
+        entries = load_all_exported_entries()
+        return entries, entries, ALL_EXPORTED_EVAL_POLICY
     raise SystemExit(f"Unknown eval set: {eval_set}")
 
 
 def load_all_manual_export_entries() -> list:
+    return load_all_exported_entries({"manual"})
+
+
+def load_all_exported_entries(allowed_label_sources: set[str] | None = None) -> list:
     if not SPLIT_MANIFEST_PATH.exists():
         raise SystemExit("Missing split manifest. Run `uv run milady build-dataset` first.")
     manifest = read_json_file(SPLIT_MANIFEST_PATH)
@@ -162,7 +170,7 @@ def load_all_manual_export_entries() -> list:
         if canonical["source"] != "export":
             continue
         label_source = str(canonical["labelSource"])
-        if label_source != "manual":
+        if allowed_label_sources is not None and label_source not in allowed_label_sources:
             continue
         label = str(group["label"])
         if label not in ("milady", "not_milady"):
@@ -173,7 +181,7 @@ def load_all_manual_export_entries() -> list:
                 path=Path(str(canonical["path"])),
                 label=label,
                 source="export",
-                split="all-manual",
+                split="all-exported",
                 label_source=label_source,
                 label_tier=str(canonical["labelTier"]),
                 sample_weight=float(canonical["sampleWeight"]),

@@ -33,7 +33,7 @@ LABEL_TIER_PRIORITY = {
     "trusted": 1,
 }
 TRUSTED_COLLECTION_WEIGHT = 0.5
-MODEL_LABEL_WEIGHT = 0.5
+DEFAULT_MODEL_LABEL_WEIGHT = 1.0
 GOLD_LABEL_SOURCE = "manual"
 MODEL_LABEL_SOURCE = "model"
 TRUSTED_LABEL_SOURCES = {MODEL_LABEL_SOURCE}
@@ -145,6 +145,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-ratio", type=float, default=0.8)
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--test-ratio", type=float, default=0.1)
+    parser.add_argument("--model-label-weight", type=float, default=DEFAULT_MODEL_LABEL_WEIGHT)
     parser.add_argument("--reset-splits", action="store_true", help="Recompute all split assignments from scratch.")
     return parser.parse_args()
 
@@ -155,7 +156,7 @@ def main() -> None:
     cache_connection = connect_offline_cache_db()
     try:
         print("[build-dataset] collecting samples", flush=True)
-        samples = build_sample_records(connection, cache_connection)
+        samples = build_sample_records(connection, cache_connection, args.model_label_weight)
         print(f"[build-dataset] collected {len(samples)} samples", flush=True)
         print("[build-dataset] grouping duplicates", flush=True)
         groups = build_group_records(samples)
@@ -271,7 +272,7 @@ def main() -> None:
                         "goldLabelSource": GOLD_LABEL_SOURCE,
                         "trustedLabelSources": sorted(TRUSTED_LABEL_SOURCES),
                         "trustedCollectionWeight": TRUSTED_COLLECTION_WEIGHT,
-                        "modelLabelWeight": MODEL_LABEL_WEIGHT,
+                        "modelLabelWeight": args.model_label_weight,
                         "collectionBlindHoldoutValCount": COLLECTION_HOLDOUT_VAL_COUNT,
                         "collectionBlindHoldoutTestCount": COLLECTION_HOLDOUT_TEST_COUNT,
                     },
@@ -291,7 +292,7 @@ def main() -> None:
         connection.close()
 
 
-def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
+def build_sample_records(connection, cache_connection, model_label_weight: float) -> list[SampleRecord]:
     samples: list[SampleRecord] = []
     processed = 0
 
@@ -347,7 +348,7 @@ def build_sample_records(connection, cache_connection) -> list[SampleRecord]:
                 perceptual_hash=fingerprint.perceptual_hash,
                 label_source=label_source,
                 label_tier=label_tier,
-                sample_weight=sample_weight_for_export_label_source(label_source),
+                sample_weight=sample_weight_for_export_label_source(label_source, model_label_weight),
                 blind_eval_eligible=label_tier == "gold",
                 exported_sha=str(row["sha256"]),
             )
@@ -592,9 +593,9 @@ def label_tier_for_export_label_source(label_source: str) -> str:
     raise SystemExit(f"Unsupported exported label source for dataset build: {label_source}")
 
 
-def sample_weight_for_export_label_source(label_source: str) -> float:
+def sample_weight_for_export_label_source(label_source: str, model_label_weight: float) -> float:
     if label_source in TRUSTED_LABEL_SOURCES:
-        return MODEL_LABEL_WEIGHT
+        return model_label_weight
     return 1.0
 
 
