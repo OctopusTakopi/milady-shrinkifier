@@ -222,6 +222,13 @@ function scoreBadgeText(item: ReviewItem): string | null {
   return `p ${formatScore(item.maxModelScore)}`;
 }
 
+function scoreBarPercent(value: number | null): number | null {
+  if (value == null || Number.isNaN(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, value * 100));
+}
+
 function shortLabel(label: ReviewLabel): string {
   if (label === "milady") return "M";
   if (label === "unclear") return "U";
@@ -890,6 +897,18 @@ function App() {
                           }}
                         >
                           <img src={imageUrl(entry.item.sha256)} alt={entry.item.sha256} />
+                          <Show when={scoreBarPercent(entry.item.maxModelScore) != null}>
+                            {(scorePercent) => (
+                              <div class="score-bar" aria-label={`p ${formatScore(entry.item.maxModelScore)} t ${formatScore(entry.item.latestModelThreshold)}`}>
+                                <div class="score-bar-fill" style={{ width: `${scorePercent()}%` }} />
+                                <Show when={scoreBarPercent(entry.item.latestModelThreshold) != null}>
+                                  {(thresholdPercent) => (
+                                    <div class="score-bar-threshold" style={{ left: `${thresholdPercent()}%` }} />
+                                  )}
+                                </Show>
+                              </div>
+                            )}
+                          </Show>
                           <div class="batch-caption">
                             <span>{batchTileKeys[itemIndex()]}</span>
                             <span class="batch-badge">{shortLabel(entry.assignedLabel)}</span>

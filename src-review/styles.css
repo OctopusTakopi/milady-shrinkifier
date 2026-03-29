@@ -306,6 +306,29 @@ a {
   display: block;
 }
 
+.score-bar {
+  position: relative;
+  height: 8px;
+  background: #ecece7;
+  border-top: 1px solid #d7d7d2;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  background: #1a7f37;
+}
+
+.score-bar-threshold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #111;
+  opacity: 0.9;
+}
+
 .batch-caption {
   display: flex;
   align-items: center;
