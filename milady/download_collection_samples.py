@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import random
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -107,10 +108,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     selected = [collection for collection in COLLECTIONS if not args.collections or collection.slug in args.collections]
+    selected_slugs = {collection.slug for collection in selected}
+    existing_manifest = read_existing_manifest_collections()
     manifest_payload: dict[str, object] = {
         "version": 1,
         "generatedAt": None,
-        "collections": [],
+        "collections": [
+            existing_manifest[collection.slug]
+            for collection in COLLECTIONS
+            if collection.slug in existing_manifest and collection.slug not in selected_slugs
+        ],
     }
 
     with httpx.Client(
@@ -175,6 +182,24 @@ def main() -> None:
     manifest_payload["generatedAt"] = datetime.now(UTC).isoformat()
     write_json_file(COLLECTION_MANIFEST_PATH, manifest_payload)
     print(f"Wrote collection manifest to {COLLECTION_MANIFEST_PATH}")
+
+
+def read_existing_manifest_collections() -> dict[str, dict[str, object]]:
+    if not COLLECTION_MANIFEST_PATH.exists():
+        return {}
+    existing_manifest = json.loads(COLLECTION_MANIFEST_PATH.read_text())
+    collections = existing_manifest.get("collections")
+    if not isinstance(collections, list):
+        return {}
+
+    by_slug: dict[str, dict[str, object]] = {}
+    for entry in collections:
+        if not isinstance(entry, dict):
+            continue
+        slug = entry.get("slug")
+        if isinstance(slug, str):
+            by_slug[slug] = entry
+    return by_slug
 
 
 def sample_token_ids(collection: CollectionSpec) -> list[int]:
