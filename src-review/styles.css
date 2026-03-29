@@ -311,12 +311,10 @@ a {
   height: 8px;
   margin: 4px 8px 0;
   background: #ecece7;
-  border-radius: 999px;
 }
 
 .score-bar-fill {
   height: 100%;
-  border-radius: 999px;
   background: #7b8794;
   width: var(--score-percent, 0%);
 }
@@ -341,17 +339,6 @@ a {
   left: var(--threshold-percent, 0%);
   margin-left: -1px;
   background: #111;
-}
-
-.score-bar-threshold-text {
-  position: absolute;
-  top: -9px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 8px;
-  font-weight: 700;
-  color: #111;
-  line-height: 1;
 }
 
 .batch-caption {

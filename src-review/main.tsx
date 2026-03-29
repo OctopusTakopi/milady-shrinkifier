@@ -918,9 +918,7 @@ function App() {
                                 style={`--score-percent: ${scoreBarPercent(entry.item.maxModelScore)}%; --threshold-percent: ${scoreBarPercent(entry.item.latestModelThreshold)}%;`}
                               >
                                 <div class="score-bar-fill" />
-                                <div class="score-bar-threshold">
-                                  <span class="score-bar-threshold-text">t</span>
-                                </div>
+                                <div class="score-bar-threshold" />
                               </div>
                             </Show>
                           </Show>
