@@ -7,13 +7,13 @@ import { render } from "solid-js/web";
 
 type ReviewLabel = "milady" | "not_milady" | "unclear";
 type QueueName =
-  | "unreviewed"
+  | "needs_review"
   | "model_disagreements"
   | "exempted"
   | "high_impact"
   | "notifications"
-  | "boundary_unlabeled"
-  | "residual_unlabeled"
+  | "boundary_review"
+  | "model_backlog"
   | "hard_negatives";
 type GridSource = "queue" | "labeled";
 type LabeledGridFilter = "all" | ReviewLabel;
@@ -110,13 +110,13 @@ type VirtualGridRow =
   | { kind: "items"; key: string; items: ReviewItem[] };
 
 const queueLabels: Record<QueueName, string> = {
-  unreviewed: "Needs review",
+  needs_review: "Needs review",
   model_disagreements: "Model disagreements",
   exempted: "Exempted",
   high_impact: "High-impact",
   notifications: "Notifications",
-  boundary_unlabeled: "Boundary review",
-  residual_unlabeled: "Model backlog",
+  boundary_review: "Boundary review",
+  model_backlog: "Model backlog",
   hard_negatives: "Hard negatives",
 };
 
@@ -156,21 +156,21 @@ const gridGroupLabels: Record<GroupLabel, string> = {
 const preferredQueueOrder: QueueName[] = [
   "hard_negatives",
   "model_disagreements",
-  "boundary_unlabeled",
+  "boundary_review",
   "notifications",
   "high_impact",
-  "unreviewed",
-  "residual_unlabeled",
+  "needs_review",
+  "model_backlog",
   "exempted",
 ];
 const queueGroups: Array<{ label: string; queues: QueueName[] }> = [
   {
     label: "Priority Review",
-    queues: ["hard_negatives", "model_disagreements", "boundary_unlabeled", "notifications", "high_impact"],
+    queues: ["hard_negatives", "model_disagreements", "boundary_review", "notifications", "high_impact"],
   },
   {
     label: "Backlog",
-    queues: ["unreviewed", "residual_unlabeled"],
+    queues: ["needs_review", "model_backlog"],
   },
   {
     label: "Audit",
@@ -316,12 +316,12 @@ function metadataRows(item: ReviewItem): Array<{ label: string; value: string | 
 
 function App() {
   const queryClient = useQueryClient();
-  const [queue, setQueue] = createSignal<QueueName>("unreviewed");
+  const [queue, setQueue] = createSignal<QueueName>("needs_review");
   const [index, setIndex] = createSignal(0);
   const [selectedSha, setSelectedSha] = createSignal<string | null>(null);
   const [activeView, setActiveView] = createSignal<"individual" | "batch">("individual");
   const [gridSource, setGridSource] = createSignal<GridSource>("queue");
-  const [gridFilter, setGridFilter] = createSignal<string>("unreviewed");
+  const [gridFilter, setGridFilter] = createSignal<string>("needs_review");
   const [selectedBatchIndex, setSelectedBatchIndex] = createSignal(0);
   const [batchAssignments, setBatchAssignments] = createSignal<BatchAssignment[]>([]);
   const [batchOffset, setBatchOffset] = createSignal(0);
@@ -344,12 +344,12 @@ function App() {
       setSelectedRunId(summary.selectedRunId);
     }
 
-    const preferredQueue = preferredQueueOrder.find((candidate) => (summary.queueCounts[candidate] ?? 0) > 0) ?? "unreviewed";
+    const preferredQueue = preferredQueueOrder.find((candidate) => (summary.queueCounts[candidate] ?? 0) > 0) ?? "needs_review";
 
     if (!(queue() in summary.queueCounts)) {
       setQueue(preferredQueue);
       setIndex(0);
-    } else if (queue() === "unreviewed" && preferredQueue !== "unreviewed" && (summary.queueCounts.unreviewed ?? 0) === 0) {
+    } else if (queue() === "needs_review" && preferredQueue !== "needs_review" && (summary.queueCounts.needs_review ?? 0) === 0) {
       setQueue(preferredQueue);
       setIndex(0);
     }
@@ -357,7 +357,7 @@ function App() {
     if (gridSource() === "queue") {
       if (!(gridFilter() in summary.queueCounts)) {
         setGridFilter(queue());
-      } else if (gridFilter() === "unreviewed" && preferredQueue !== "unreviewed" && (summary.queueCounts.unreviewed ?? 0) === 0) {
+      } else if (gridFilter() === "needs_review" && preferredQueue !== "needs_review" && (summary.queueCounts.needs_review ?? 0) === 0) {
         setGridFilter(preferredQueue);
       }
     } else if (!(gridFilter() in labeledGridLabels)) {
@@ -410,7 +410,7 @@ function App() {
       return "Loading summary…";
     }
     const queueCount = activeQueueCount();
-    if (queue() === "unreviewed") {
+    if (queue() === "needs_review") {
       return `${summary.totalImages} images, ${queueCount} need review, run ${summary.selectedRunId ?? "unscored"}`;
     }
     return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queue()].toLowerCase()}, ${summary.needsReview} need review overall, run ${summary.selectedRunId ?? "unscored"}`;
@@ -1055,7 +1055,7 @@ function App() {
                                           {(scoreText) => <span class="thumb-score-badge">{scoreText()}</span>}
                                         </Show>
                                       </div>
-                                      <span class="thumb-label">{item.label ? labelDisplay[item.label] : "unreviewed"}</span>
+                                      <span class="thumb-label">{item.label ? labelDisplay[item.label] : "needs review"}</span>
                                     </button>
                                   )}
                                 </For>

@@ -203,7 +203,7 @@ def summary(run_id: str | None = Query(None)) -> JSONResponse:
 
 @app.get("/api/queue")
 def get_queue(
-    queue: str = Query("unreviewed"),
+    queue: str = Query("needs_review"),
     index: int = Query(0, ge=0),
     run_id: str | None = Query(None),
 ) -> JSONResponse:
@@ -214,7 +214,7 @@ def get_queue(
 
 @app.get("/api/batch")
 def get_batch(
-    queue: str = Query("unreviewed"),
+    queue: str = Query("needs_review"),
     limit: int = Query(9, ge=1, le=25),
     offset: int = Query(0, ge=0),
     run_id: str | None = Query(None),
@@ -283,7 +283,7 @@ def get_labeled_grid(
 
 @app.get("/api/queue-grid")
 def get_queue_grid(
-    queue: str = Query("unreviewed"),
+    queue: str = Query("needs_review"),
     limit: int | None = Query(None, ge=1),
     run_id: str | None = Query(None),
 ) -> JSONResponse:

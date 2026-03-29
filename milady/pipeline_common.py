@@ -34,13 +34,13 @@ CATALOG_PATH = DATASET_ROOT / "avatar_catalog.sqlite"
 PUBLIC_MODEL_PATH = PROJECT_ROOT / "public" / "models" / "milady-mobilenetv3-small.onnx"
 PUBLIC_METADATA_PATH = PROJECT_ROOT / "public" / "generated" / "milady-mobilenetv3-small.meta.json"
 REVIEW_QUEUES = (
-    "unreviewed",
+    "needs_review",
     "model_disagreements",
     "exempted",
     "high_impact",
     "notifications",
-    "boundary_unlabeled",
-    "residual_unlabeled",
+    "boundary_review",
+    "model_backlog",
     "hard_negatives",
 )
 LABELS = ("milady", "not_milady", "unclear")
@@ -657,7 +657,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
     def needs_review(item: ReviewItem) -> bool:
         return item.label_source != "manual"
 
-    if queue_name == "unreviewed":
+    if queue_name == "needs_review":
         filtered = [item for item in items if needs_review(item)]
         return sorted(
             filtered,
@@ -693,7 +693,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             reverse=True,
         )
 
-    if queue_name == "boundary_unlabeled":
+    if queue_name == "boundary_review":
         return sorted(
             (
                 item
@@ -709,7 +709,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             ),
         )
 
-    if queue_name == "residual_unlabeled":
+    if queue_name == "model_backlog":
         return sorted(
             (
                 item
