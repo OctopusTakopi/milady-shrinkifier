@@ -66,7 +66,7 @@ class ReviewSnapshot:
     labeled_lists: dict[str, list[ReviewItem]]
     image_paths: dict[str, Path]
     label_counts: dict[str, int]
-    unlabeled: int
+    needs_review: int
     recent_events: list[dict[str, Any]]
     can_undo: bool
 
@@ -106,10 +106,10 @@ class ReviewState:
             labeled_lists = {filter_name: labeled_grid_items(items, filter_name) for filter_name in LABELED_GRID_FILTERS}
             image_paths = {item.sha256: resolve_repo_path(item.local_path) for item in items}
             label_counts: dict[str, int] = {label: 0 for label in LABELS}
-            unlabeled = 0
+            needs_review = 0
             for item in items:
-                if item.label is None:
-                    unlabeled += 1
+                if item.label_source != MANUAL_LABEL_SOURCE:
+                    needs_review += 1
                 elif item.label in label_counts:
                     label_counts[item.label] += 1
             recent_events = [dict(row) for row in recent_label_events(connection, 200)]
@@ -124,7 +124,7 @@ class ReviewState:
             labeled_lists=labeled_lists,
             image_paths=image_paths,
             label_counts=label_counts,
-            unlabeled=unlabeled,
+            needs_review=needs_review,
             recent_events=recent_events,
             can_undo=bool(recent_events),
         )
@@ -195,7 +195,7 @@ def summary(run_id: str | None = Query(None)) -> JSONResponse:
             "totalImages": len(snapshot.items),
             "queueCounts": counts,
             "labelCounts": snapshot.label_counts,
-            "unlabeled": snapshot.unlabeled,
+            "needsReview": snapshot.needs_review,
             "canUndo": snapshot.can_undo,
         }
     )

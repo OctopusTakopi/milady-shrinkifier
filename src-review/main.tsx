@@ -52,7 +52,7 @@ interface SummaryPayload {
   totalImages: number;
   queueCounts: Record<QueueName, number>;
   labelCounts: Record<ReviewLabel, number>;
-  unlabeled: number;
+  needsReview: number;
   canUndo: boolean;
 }
 
@@ -110,13 +110,13 @@ type VirtualGridRow =
   | { kind: "items"; key: string; items: ReviewItem[] };
 
 const queueLabels: Record<QueueName, string> = {
-  unreviewed: "Unreviewed",
+  unreviewed: "Needs review",
   model_disagreements: "Model disagreements",
   exempted: "Exempted",
   high_impact: "High-impact",
   notifications: "Notifications",
-  boundary_unlabeled: "Boundary unlabeled",
-  residual_unlabeled: "Residual unlabeled",
+  boundary_unlabeled: "Boundary review",
+  residual_unlabeled: "Model backlog",
   hard_negatives: "Hard negatives",
 };
 
@@ -411,9 +411,9 @@ function App() {
     }
     const queueCount = activeQueueCount();
     if (queue() === "unreviewed") {
-      return `${summary.totalImages} images, ${queueCount} unreviewed, run ${summary.selectedRunId ?? "unscored"}`;
+      return `${summary.totalImages} images, ${queueCount} need review, run ${summary.selectedRunId ?? "unscored"}`;
     }
-    return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queue()].toLowerCase()}, ${summary.unlabeled} unreviewed overall, run ${summary.selectedRunId ?? "unscored"}`;
+    return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queue()].toLowerCase()}, ${summary.needsReview} need review overall, run ${summary.selectedRunId ?? "unscored"}`;
   });
 
   const currentHeading = createMemo(() => {

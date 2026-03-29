@@ -17,8 +17,6 @@ from .pipeline_common import (
 )
 
 MODEL_LABEL_SOURCE = "model"
-DEFAULT_NEGATIVE_MAX_PROBABILITY = 0.005
-DEFAULT_POSITIVE_MIN_PROBABILITY = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,18 +34,6 @@ def parse_args() -> argparse.Namespace:
         "--score-only",
         action="store_true",
         help="Only write model_scores. Skip refreshing automatic model labels.",
-    )
-    parser.add_argument(
-        "--max-negative-probability",
-        type=float,
-        default=DEFAULT_NEGATIVE_MAX_PROBABILITY,
-        help="When refreshing model labels, auto-label images with score <= this threshold as not_milady.",
-    )
-    parser.add_argument(
-        "--min-positive-probability",
-        type=float,
-        default=DEFAULT_POSITIVE_MIN_PROBABILITY,
-        help="Optional auto-label threshold for milady when refreshing model labels. Disabled by default.",
     )
     return parser.parse_args()
 
@@ -152,8 +138,6 @@ def main() -> None:
             model_label_summary = refresh_model_labels(
                 connection,
                 run_id,
-                args.max_negative_probability,
-                args.min_positive_probability,
             )
 
         output = {
@@ -175,12 +159,10 @@ def main() -> None:
 def refresh_model_labels(
     connection,
     run_id: str,
-    max_negative_probability: float,
-    min_positive_probability: float | None,
-) -> dict[str, int | float | None]:
-    negative_candidates = connection.execute(
+)-> dict[str, int]:
+    candidates = connection.execute(
         """
-        SELECT images.sha256, score_records.score
+        SELECT images.sha256, score_records.score, score_records.predicted_label
         FROM images
         INNER JOIN model_scores AS score_records
           ON score_records.image_sha256 = images.sha256
@@ -189,37 +171,14 @@ def refresh_model_labels(
             images.label IS NULL
             OR images.label_source = ?
           )
-          AND score_records.score <= ?
-        ORDER BY score_records.score ASC, images.sha256 ASC
+        ORDER BY score_records.image_sha256 ASC
         """,
-        (run_id, MODEL_LABEL_SOURCE, max_negative_probability),
+        (run_id, MODEL_LABEL_SOURCE),
     ).fetchall()
 
-    positive_candidates = []
-    if min_positive_probability is not None:
-        positive_candidates = connection.execute(
-            """
-            SELECT images.sha256, score_records.score
-            FROM images
-            INNER JOIN model_scores AS score_records
-              ON score_records.image_sha256 = images.sha256
-            WHERE score_records.run_id = ?
-              AND (
-                images.label IS NULL
-                OR images.label_source = ?
-              )
-              AND score_records.score >= ?
-            ORDER BY score_records.score DESC, images.sha256 ASC
-            """,
-            (run_id, MODEL_LABEL_SOURCE, min_positive_probability),
-        ).fetchall()
-
     updates = [
-        build_model_label_payload(run_id, str(row["sha256"]), "not_milady", float(row["score"]))
-        for row in negative_candidates
-    ] + [
-        build_model_label_payload(run_id, str(row["sha256"]), "milady", float(row["score"]))
-        for row in positive_candidates
+        build_model_label_payload(run_id, str(row["sha256"]), str(row["predicted_label"]), float(row["score"]))
+        for row in candidates
     ]
 
     connection.execute(
@@ -256,10 +215,8 @@ def refresh_model_labels(
         )
     connection.commit()
     return {
-        "maxNegativeProbability": max_negative_probability,
-        "minPositiveProbability": min_positive_probability,
-        "negativeCount": len(negative_candidates),
-        "positiveCount": len(positive_candidates),
+        "negativeCount": sum(1 for update in updates if update["label"] == "not_milady"),
+        "positiveCount": sum(1 for update in updates if update["label"] == "milady"),
         "updatedCount": len(updates),
     }
 
@@ -279,15 +236,6 @@ def load_default_run_id() -> str:
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    if not 0.0 <= args.max_negative_probability <= 1.0:
-        raise SystemExit("--max-negative-probability must be between 0 and 1.")
-    if args.min_positive_probability is not None and not 0.0 <= args.min_positive_probability <= 1.0:
-        raise SystemExit("--min-positive-probability must be between 0 and 1.")
-    if (
-        args.min_positive_probability is not None
-        and args.min_positive_probability <= args.max_negative_probability
-    ):
-        raise SystemExit("--min-positive-probability must be greater than --max-negative-probability.")
     if args.limit is not None and args.limit <= 0:
         raise SystemExit("--limit must be positive.")
     if args.limit is not None and not args.score_only:

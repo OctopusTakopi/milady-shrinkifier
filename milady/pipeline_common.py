@@ -654,8 +654,11 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
     if queue_name not in REVIEW_QUEUES:
         raise ValueError(f"Unsupported review queue: {queue_name}")
 
+    def needs_review(item: ReviewItem) -> bool:
+        return item.label_source != "manual"
+
     if queue_name == "unreviewed":
-        filtered = [item for item in items if item.label is None]
+        filtered = [item for item in items if needs_review(item)]
         return sorted(
             filtered,
             key=lambda item: (
@@ -695,7 +698,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             (
                 item
                 for item in items
-                if item.label is None
+                if needs_review(item)
                 and item.max_model_score is not None
                 and item.latest_model_threshold is not None
                 and item.latest_model_distance_to_threshold is not None
@@ -711,7 +714,7 @@ def queue_items(items: list[ReviewItem], queue_name: str) -> list[ReviewItem]:
             (
                 item
                 for item in items
-                if item.label is None and item.max_model_score is not None
+                if needs_review(item) and item.max_model_score is not None
             ),
             key=lambda item: item.max_model_score if item.max_model_score is not None else -1.0,
             reverse=True,
