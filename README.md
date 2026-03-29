@@ -48,7 +48,7 @@ All scores below come from the current manually reviewed exported corpus.
 | `v0.4.0` | `20260328T144735Z` | + `5,715` manually tagged avatars | `0.9971` | `0.7918` |
 | `v0.5.0` | `20260328T223931Z` | + `6,773` manually tagged avatars | `0.9952` | `0.9451` |
 | `v0.6.0` | `20260329T124912Z` | + `7,370` human-reviewed avatars | `0.9952` | `0.9474` |
-| `Current` | `20260329T181946Z` | + `7,695` human-reviewed avatars | `0.9951` | `0.9291` |
+| `v0.7.0` | `20260329T181946Z` | + `7,695` human-reviewed avatars | `0.9951` | `0.9291` |
 
 All rows were re-evaluated on the same manually reviewed exported corpus on March 29, 2026, so they are directly comparable.
 
