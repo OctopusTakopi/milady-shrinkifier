@@ -240,12 +240,6 @@ def init_db(connection: sqlite3.Connection) -> None:
         """
     )
     ensure_column(connection, "label_events", "batch_id", "TEXT")
-    connection.execute(
-        "UPDATE images SET label_source = 'manual' WHERE label_source = 'model_reviewed'"
-    )
-    connection.execute(
-        "UPDATE label_events SET previous_label_source = 'manual' WHERE previous_label_source = 'model_reviewed'"
-    )
     connection.commit()
 
 

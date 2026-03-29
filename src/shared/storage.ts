@@ -114,8 +114,7 @@ export function normalizeStats(value: unknown): DetectionStats {
     avatarsChecked: readNumber(candidate.avatarsChecked),
     cacheHits: readNumber(candidate.cacheHits),
     postsMatched: readNumber(candidate.postsMatched),
-    modelMatches: readNumber((candidate as Record<string, unknown>).modelMatches)
-      || readNumber((candidate as Record<string, unknown>).onnxMatches),
+    modelMatches: readNumber((candidate as Record<string, unknown>).modelMatches),
     errors: readNumber(candidate.errors),
     lastMatchAt: typeof candidate.lastMatchAt === "string" ? candidate.lastMatchAt : null,
   };
