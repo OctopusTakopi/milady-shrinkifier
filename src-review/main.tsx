@@ -307,6 +307,14 @@ function metadataRows(item: ReviewItem): Array<{ label: string; value: string | 
   ];
 }
 
+function summaryCopy(summary: SummaryPayload, queueName: QueueName): string {
+  const queueCount = summary.queueCounts[queueName] ?? 0;
+  if (queueName === "unlabeled") {
+    return `${summary.totalImages} images, ${queueCount} unlabeled, run ${summary.selectedRunId ?? "unscored"}`;
+  }
+  return `${summary.totalImages} images, ${queueCount} in ${queueLabels[queueName].toLowerCase()}, ${summary.unlabeled} unlabeled overall, run ${summary.selectedRunId ?? "unscored"}`;
+}
+
 function App() {
   const queryClient = useQueryClient();
   const [queue, setQueue] = createSignal<QueueName>("unlabeled");
@@ -747,7 +755,7 @@ function App() {
           </label>
           <p class="summary-copy">
             <Show when={summaryQuery.data} fallback="Loading summary…">
-              {(summary) => `${summary().totalImages} images, ${summary().unlabeled} unlabeled, run ${summary().selectedRunId ?? "unscored"}`}
+              {(summary) => summaryCopy(summary(), queue())}
             </Show>
           </p>
           <div class="actions">
