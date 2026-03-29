@@ -19,6 +19,7 @@ from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
 from .pipeline_common import (
     connect_offline_cache_db,
+    convert_image_to_rgb,
     get_file_fingerprint,
     inference_variant_cache_path,
     write_npz_atomic,
@@ -66,7 +67,7 @@ class AvatarDataset(Dataset[tuple[torch.Tensor, int, float]]):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int, float]:
         entry = self.entries[index]
         with Image.open(entry.path) as image:
-            prepared = image.convert("RGB")
+            prepared = convert_image_to_rgb(image)
             if self.training and self.augment:
                 prepared = apply_training_augment(prepared)
             tensor = self.to_tensor(prepared)
@@ -254,7 +255,7 @@ def load_image_variants_for_inference(image: Image.Image) -> torch.Tensor:
 def prepare_inference_variant_array(image: Image.Image, variant: Literal["center", "top"]) -> np.ndarray:
     centering = (0.5, 0.0) if variant == "top" else (0.5, 0.5)
     prepared = ImageOps.fit(
-        image.convert("RGB"),
+        convert_image_to_rgb(image),
         (MODEL_IMAGE_SIZE, MODEL_IMAGE_SIZE),
         method=Image.Resampling.BICUBIC,
         centering=centering,
@@ -282,7 +283,7 @@ def load_or_create_inference_variant_arrays(path: Path, raw_sha: str) -> tuple[n
             cache_path.unlink(missing_ok=True)
 
     with Image.open(path) as image:
-        prepared = image.convert("RGB")
+        prepared = convert_image_to_rgb(image)
         center = prepare_inference_variant_array(prepared, "center")
         top = prepare_inference_variant_array(prepared, "top")
     write_npz_atomic(cache_path, center=center, top=top)

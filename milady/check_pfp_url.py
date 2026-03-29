@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 
 from .mobilenet_common import INFERENCE_CROP_VARIANTS, create_model, load_image_variants_for_inference, score_logits_to_probabilities
-from .pipeline_common import MODEL_RUN_ROOT
+from .pipeline_common import MODEL_RUN_ROOT, convert_image_to_rgb
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,7 +96,7 @@ def normalize_profile_image_url(url: str) -> str:
 
 def infer_probability(model: torch.nn.Module, image_bytes: bytes) -> float:
     with Image.open(BytesIO(image_bytes)) as image:
-        variants = load_image_variants_for_inference(image.convert("RGB"))
+        variants = load_image_variants_for_inference(convert_image_to_rgb(image))
     with torch.no_grad():
         probabilities = score_logits_to_probabilities(model(variants)).view(1, len(INFERENCE_CROP_VARIANTS))
         probability = torch.max(probabilities, dim=1).values[0]

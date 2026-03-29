@@ -362,6 +362,13 @@ def sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def convert_image_to_rgb(image: Image.Image) -> Image.Image:
+    transparency = image.info.get("transparency")
+    if image.mode == "P" and isinstance(transparency, bytes):
+        return image.convert("RGBA").convert("RGB")
+    return image.convert("RGB")
+
+
 def inspect_image_bytes(payload: bytes) -> tuple[int, int, str | None]:
     with Image.open(BytesIO(payload)) as image:
         width, height = image.size
@@ -399,7 +406,7 @@ def get_file_fingerprint(connection: sqlite3.Connection, path: Path, image_size:
         raw_sha = sha256_bytes(payload)
         with Image.open(BytesIO(payload)) as image:
             width, height = image.size
-            prepared_source = image.convert("RGB")
+            prepared_source = convert_image_to_rgb(image)
             prepared = prepared_source.resize((image_size, image_size), Image.Resampling.BICUBIC)
             pixel_digest = sha256_bytes(prepared.tobytes())
             perceptual_hash = str(imagehash.phash(prepared_source))
