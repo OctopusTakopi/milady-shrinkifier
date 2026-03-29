@@ -319,7 +319,7 @@ class CompareSummary(msgspec.Struct, omit_defaults=True, kw_only=True):
     releases: dict[str, str] | None = None
 
 
-class ReviewItemPayload(msgspec.Struct, omit_defaults=True, kw_only=True):
+class ReviewItem(msgspec.Struct, omit_defaults=True, kw_only=True):
     sha256: str
     label: str | None = None
     label_source: str | None = None
@@ -361,18 +361,18 @@ class ReviewQueuePayload(msgspec.Struct, kw_only=True):
     queue: str
     index: int
     total: int
-    item: ReviewItemPayload | None
+    item: ReviewItem | None
 
 
 class ReviewBatchPayload(msgspec.Struct, kw_only=True):
     queue: str
     total: int
     offset: int
-    items: list[ReviewItemPayload]
+    items: list[ReviewItem]
 
 
 class ReviewItemResponse(msgspec.Struct, kw_only=True):
-    item: ReviewItemPayload
+    item: ReviewItem
 
 
 class ReviewHistoryEntry(msgspec.Struct, omit_defaults=True, kw_only=True):
@@ -381,7 +381,7 @@ class ReviewHistoryEntry(msgspec.Struct, omit_defaults=True, kw_only=True):
     created_at: str
     new_label: str
     previous_label: str | None = None
-    item: ReviewItemPayload | None = None
+    item: ReviewItem | None = None
 
 
 class ReviewHistoryPayload(msgspec.Struct, kw_only=True):
@@ -390,7 +390,7 @@ class ReviewHistoryPayload(msgspec.Struct, kw_only=True):
 
 class ReviewGridPayload(msgspec.Struct, kw_only=True):
     total: int
-    items: list[ReviewItemPayload]
+    items: list[ReviewItem]
 
 
 class ReviewLabelRequest(msgspec.Struct, omit_defaults=True, kw_only=True):
@@ -429,4 +429,4 @@ class ReviewUndoBatchResponse(msgspec.Struct, omit_defaults=True, kw_only=True):
 class ReviewUndoSingleResponse(msgspec.Struct, omit_defaults=True, kw_only=True):
     ok: bool
     undone_sha256: str
-    item: ReviewItemPayload | None = None
+    item: ReviewItem | None = None

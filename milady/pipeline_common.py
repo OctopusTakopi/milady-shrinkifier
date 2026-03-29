@@ -16,7 +16,7 @@ import msgspec
 from PIL import Image
 
 from .wire import (
-    ReviewItemPayload,
+    ReviewItem,
     RunSummary,
     decode_string_list,
     encode_string_list,
@@ -53,63 +53,6 @@ REVIEW_QUEUES = (
 )
 LABELS = ("milady", "not_milady", "unclear")
 LABELED_GRID_FILTERS = ("all", "milady", "not_milady", "unclear")
-
-
-@dataclass(slots=True)
-class ReviewItem:
-    sha256: str
-    label: str | None
-    label_source: str | None
-    local_path: str
-    byte_size: int | None
-    width: int | None
-    height: int | None
-    handles: list[str]
-    display_names: list[str]
-    source_surfaces: list[str]
-    seen_count: int
-    whitelisted: bool
-    max_model_score: float | None
-    latest_model_predicted_label: str | None
-    latest_model_run_id: str | None
-    latest_model_threshold: float | None
-    latest_model_distance_to_threshold: float | None
-    disagreement_flags: list[str]
-    labeled_at: str | None
-    example_profile_url: str | None
-    example_notification_url: str | None
-    example_tweet_url: str | None
-    last_seen_at: str | None
-    image_url_count: int
-
-    def to_payload(self) -> ReviewItemPayload:
-        return ReviewItemPayload(
-            sha256=self.sha256,
-            label=self.label,
-            label_source=self.label_source,
-            local_path=self.local_path,
-            byte_size=self.byte_size,
-            width=self.width,
-            height=self.height,
-            handles=self.handles,
-            display_names=self.display_names,
-            source_surfaces=self.source_surfaces,
-            seen_count=self.seen_count,
-            whitelisted=self.whitelisted,
-            max_model_score=self.max_model_score,
-            latest_model_predicted_label=self.latest_model_predicted_label,
-            latest_model_run_id=self.latest_model_run_id,
-            latest_model_threshold=self.latest_model_threshold,
-            latest_model_distance_to_threshold=self.latest_model_distance_to_threshold,
-            disagreement_flags=self.disagreement_flags,
-            labeled_at=self.labeled_at,
-            example_profile_url=self.example_profile_url,
-            example_notification_url=self.example_notification_url,
-            example_tweet_url=self.example_tweet_url,
-            last_seen_at=self.last_seen_at,
-            image_url_count=self.image_url_count,
-        )
-
 
 @dataclass(slots=True)
 class FileFingerprint:

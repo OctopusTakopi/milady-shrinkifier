@@ -166,7 +166,7 @@ def index_payload(snapshot: ReviewSnapshot, queue_name: str, index: int) -> dict
         queue=queue_name,
         index=bounded_index,
         total=len(items),
-        item=items[bounded_index].to_payload(),
+        item=items[bounded_index],
     )
 
 
@@ -230,7 +230,7 @@ def get_batch(
             queue=queue_name,
             total=len(items),
             offset=bounded_offset,
-            items=[item.to_payload() for item in sliced_items],
+            items=sliced_items,
         )
     )
 
@@ -241,7 +241,7 @@ def get_item(sha256: str, run_id: str | None = Query(None)) -> Response:
     item = snapshot.items_by_sha.get(sha256)
     if item is None:
         raise HTTPException(status_code=404, detail="Review item not found")
-    return json_response(ReviewItemResponse(item=item.to_payload()))
+    return json_response(ReviewItemResponse(item=item))
 
 
 @app.get("/api/history")
@@ -257,7 +257,7 @@ def get_history(limit: int = Query(24, ge=1, le=100), run_id: str | None = Query
                 created_at=str(event["created_at"]),
                 new_label=str(event["new_label"]),
                 previous_label=event["previous_label"],
-                item=item.to_payload() if item else None,
+                item=item,
             )
         )
     return json_response(ReviewHistoryPayload(history=history))
@@ -276,7 +276,7 @@ def get_labeled_grid(
     return json_response(
         ReviewGridPayload(
             total=len(items),
-            items=[item.to_payload() for item in sliced_items],
+            items=sliced_items,
         )
     )
 
@@ -294,7 +294,7 @@ def get_queue_grid(
     return json_response(
         ReviewGridPayload(
             total=len(items),
-            items=[item.to_payload() for item in sliced_items],
+            items=sliced_items,
         )
     )
 
@@ -518,7 +518,7 @@ def undo_last_label() -> Response:
         ReviewUndoSingleResponse(
             ok=True,
             undone_sha256=undone_sha,
-            item=item.to_payload() if item else None,
+            item=item,
         )
     )
 
