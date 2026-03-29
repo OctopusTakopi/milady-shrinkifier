@@ -673,16 +673,6 @@ function App() {
         moveBatchSelection(1);
         return;
       }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        moveBatchSelection(-3);
-        return;
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        moveBatchSelection(3);
-        return;
-      }
       if (event.key === "Enter" || event.code === "NumpadEnter") {
         event.preventDefault();
         await handleCommitBatch();
@@ -887,7 +877,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div class="hint">Numpad cycles labels, arrow keys move selection, Enter commits or advances.</div>
+              <div class="hint">Numpad cycles labels, left/right moves selection, Enter commits or advances.</div>
               <div class="batch-panel">
                 <Show when={batchAssignments().length > 0} fallback={<p class="empty-copy">No items in this queue.</p>}>
                   <div class="batch-grid">
