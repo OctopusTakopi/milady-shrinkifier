@@ -39,15 +39,19 @@ import type {
 const STYLE_ID = "milady-shrinkifier-style";
 const ARTICLE_SELECTOR = 'article[data-testid="tweet"]';
 const NOTIFICATION_SELECTOR = 'article[data-testid="notification"]';
+const USER_CELL_SELECTOR = '[data-testid="UserCell"]';
 const cache = new Map<string, Promise<DetectionResult>>();
 const processed = new WeakMap<HTMLElement, string>();
 const processedNotifications = new WeakMap<HTMLElement, string>();
+const processedUserCells = new WeakMap<HTMLElement, string>();
 const placeholders = new WeakMap<HTMLElement, HTMLDivElement>();
 const revealed = new WeakMap<HTMLElement, string>();
 const observedTweets = new WeakSet<HTMLElement>();
 const observedNotifications = new WeakSet<HTMLElement>();
+const observedUserCells = new WeakSet<HTMLElement>();
 const visibleTweets = new Set<HTMLElement>();
 const visibleNotifications = new Set<HTMLElement>();
+const visibleUserCells = new Set<HTMLElement>();
 
 let settings: ExtensionSettings = DEFAULT_SETTINGS;
 let modelMetadataPromise: Promise<ResolvedModel> | null = null;
@@ -104,6 +108,7 @@ async function boot(): Promise<void> {
 async function processVisibleTweets(): Promise<void> {
   const tweets = Array.from(visibleTweets).filter((tweet) => tweet.isConnected);
   const notifications = Array.from(visibleNotifications).filter((notification) => notification.isConnected);
+  const userCells = Array.from(visibleUserCells).filter((userCell) => userCell.isConnected);
   for (const tweet of Array.from(visibleTweets)) {
     if (!tweet.isConnected) {
       visibleTweets.delete(tweet);
@@ -114,16 +119,26 @@ async function processVisibleTweets(): Promise<void> {
       visibleNotifications.delete(notification);
     }
   }
+  for (const userCell of Array.from(visibleUserCells)) {
+    if (!userCell.isConnected) {
+      visibleUserCells.delete(userCell);
+    }
+  }
   await Promise.allSettled([
     ...tweets.map((tweet) => processTweet(tweet)),
     ...notifications.map((notification) => processNotificationGroup(notification)),
+    ...userCells.map((userCell) => processUserCell(userCell)),
   ]);
 }
 
 function handleVisibilityChange(entries: IntersectionObserverEntry[]): void {
   for (const entry of entries) {
     const element = entry.target as HTMLElement;
-    const targetSet = element.matches(ARTICLE_SELECTOR) ? visibleTweets : visibleNotifications;
+    const targetSet = element.matches(ARTICLE_SELECTOR)
+      ? visibleTweets
+      : element.matches(NOTIFICATION_SELECTOR)
+        ? visibleNotifications
+        : visibleUserCells;
     if (entry.isIntersecting) {
       targetSet.add(element);
       continue;
@@ -149,6 +164,9 @@ function observeTrackableElements(root: ParentNode): void {
   for (const notification of Array.from(root.querySelectorAll<HTMLElement>(NOTIFICATION_SELECTOR))) {
     observeTrackableElement(notification);
   }
+  for (const userCell of Array.from(root.querySelectorAll<HTMLElement>(USER_CELL_SELECTOR))) {
+    observeTrackableElement(userCell);
+  }
 }
 
 function observeTrackableElement(element: HTMLElement): void {
@@ -170,6 +188,15 @@ function observeTrackableElement(element: HTMLElement): void {
       return;
     }
     observedNotifications.add(element);
+    visibilityObserver.observe(element);
+    return;
+  }
+
+  if (element.matches(USER_CELL_SELECTOR)) {
+    if (observedUserCells.has(element)) {
+      return;
+    }
+    observedUserCells.add(element);
     visibilityObserver.observe(element);
   }
 }
@@ -322,6 +349,29 @@ async function processNotificationGroup(notification: HTMLElement): Promise<void
       sourceSurface: "notification-group",
     });
   }
+}
+
+async function processUserCell(userCell: HTMLElement): Promise<void> {
+  const entry = collectUserCellEntry(userCell);
+  if (!entry) {
+    return;
+  }
+
+  const signature = `${entry.author.handle}:${entry.normalizedUrl}`;
+  if (processedUserCells.get(userCell) === signature) {
+    return;
+  }
+  processedUserCells.set(userCell, signature);
+
+  recordCollectedAvatar({
+    normalizedUrl: entry.normalizedUrl,
+    originalUrl: entry.originalUrl,
+    author: entry.author,
+    whitelisted: settings.whitelistHandles.includes(entry.author.handle),
+    exampleTweetUrl: null,
+    exampleNotificationUrl: null,
+    sourceSurface: "user-list",
+  });
 }
 
 async function detectAvatar(image: HTMLImageElement, normalizedUrl: string): Promise<DetectionResult> {
@@ -869,6 +919,37 @@ function collectNotificationAvatarEntries(notification: HTMLElement): Array<{
   }
 
   return Array.from(results.values());
+}
+
+function collectUserCellEntry(userCell: HTMLElement): {
+  author: { handle: string; displayName: string | null };
+  normalizedUrl: string;
+  originalUrl: string;
+} | null {
+  const container = userCell.querySelector<HTMLElement>('[data-testid^="UserAvatar-Container-"]');
+  const image = container?.querySelector<HTMLImageElement>('img[src*="profile_images"]');
+  const source = image?.currentSrc || image?.src;
+  if (!source) {
+    return null;
+  }
+
+  const handleFromContainer = normalizeHandle(container?.dataset.testid?.replace(/^UserAvatar-Container-/, ""));
+  const handleFromLink = normalizeHandle(
+    userCell.querySelector<HTMLAnchorElement>('a[href^="/"]')?.getAttribute("href"),
+  );
+  const handle = handleFromContainer || handleFromLink;
+  if (!handle) {
+    return null;
+  }
+
+  return {
+    author: {
+      handle,
+      displayName: extractDisplayName(userCell),
+    },
+    normalizedUrl: normalizeProfileImageUrl(source),
+    originalUrl: source,
+  };
 }
 
 function toAbsoluteUrl(value: string | null | undefined): string | null {
