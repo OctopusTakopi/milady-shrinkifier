@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--label-smoothing", type=float, default=0.02)
     parser.add_argument("--augment", choices=("on", "off"), default="on")
     parser.add_argument("--log-every", type=int, default=25, help="Print a batch progress update every N training steps.")
-    parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=3)
     parser.add_argument("--precision-floor", type=float, default=0.995)
