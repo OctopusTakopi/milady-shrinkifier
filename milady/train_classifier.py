@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import random
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -44,6 +46,19 @@ DEFAULT_WANDB_PROJECT = "milady-shrinkifier"
 DEFAULT_WANDB_ENTITY = "banteg-"
 
 
+@dataclass(frozen=True)
+class RegularizedBatch:
+    inputs: torch.Tensor
+    primary_labels: torch.Tensor
+    secondary_labels: torch.Tensor
+    primary_contributions: torch.Tensor
+    secondary_contributions: torch.Tensor
+    lambda_value: float
+    effective_primary_ratio: float
+    method: str
+    active: bool
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a MobileNetV3-Small binary Milady classifier.")
     parser.add_argument("--epochs", type=int, default=15)
@@ -56,6 +71,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--head-learning-rate", type=float, help="Optional LR for classifier-head warmup. Defaults to learning rate.")
     parser.add_argument("--label-smoothing", type=float, default=0.02)
     parser.add_argument("--augment", choices=("on", "off"), default="on")
+    parser.add_argument("--mixup", choices=("on", "off"), default="on")
+    parser.add_argument("--mixup-alpha", type=float, default=0.2, help="Mixup Beta(alpha, alpha) concentration. Set to 0 to disable.")
+    parser.add_argument("--cutmix", choices=("on", "off"), default="off")
+    parser.add_argument("--cutmix-alpha", type=float, default=1.0, help="CutMix Beta(alpha, alpha) concentration. Set to 0 to disable.")
     parser.add_argument("--log-every", type=int, default=25, help="Print a batch progress update every N training steps.")
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
@@ -79,6 +98,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.mixup_alpha < 0.0:
+        raise SystemExit("--mixup-alpha must be >= 0.")
+    if args.cutmix_alpha < 0.0:
+        raise SystemExit("--cutmix-alpha must be >= 0.")
     train_entries = load_dataset_entries(SPLIT_ROOT / "train.jsonl")
     val_entries = load_dataset_entries(SPLIT_ROOT / "val.jsonl")
     test_entries = load_dataset_entries(SPLIT_ROOT / "test.jsonl")
@@ -90,6 +113,10 @@ def main() -> None:
     head_warmup_epochs = max(0, min(args.head_warmup_epochs, args.epochs))
     finetune_epochs = max(0, args.epochs - head_warmup_epochs)
     head_learning_rate = args.head_learning_rate if args.head_learning_rate is not None else args.learning_rate
+    cutmix_enabled = cutmix_is_enabled(args.cutmix, args.cutmix_alpha)
+    mixup_enabled = mixup_is_enabled(args.mixup, args.mixup_alpha) and not cutmix_enabled
+    batch_regularization = resolve_batch_regularization(mixup_enabled, cutmix_enabled)
+    batch_regularization_alpha = args.mixup_alpha if batch_regularization == "mixup" else args.cutmix_alpha if batch_regularization == "cutmix" else 0.0
     train_loader = DataLoader(
         AvatarDataset(train_entries, training=True, augment=args.augment == "on"),
         batch_size=args.batch_size,
@@ -116,6 +143,8 @@ def main() -> None:
             head_warmup_epochs,
             head_learning_rate,
             finetune_epochs,
+            batch_regularization,
+            batch_regularization_alpha,
         )
         wandb_run = init_wandb(
             args,
@@ -126,6 +155,9 @@ def main() -> None:
             run_dir,
             head_warmup_epochs,
             head_learning_rate,
+            batch_regularization,
+            mixup_enabled,
+            cutmix_enabled,
         )
 
         best_state: dict[str, torch.Tensor] | None = None
@@ -166,6 +198,8 @@ def main() -> None:
                 global_step,
                 scheduler,
                 phase,
+                batch_regularization,
+                batch_regularization_alpha,
             )
             val_probabilities, val_labels = evaluate(model, val_entries, device, args.batch_size, cache_connection)
             threshold, threshold_metrics = choose_threshold(val_probabilities, val_labels, args.precision_floor)
@@ -278,6 +312,11 @@ def main() -> None:
             learning_rate=args.learning_rate,
             label_smoothing=args.label_smoothing,
             augment=args.augment == "on",
+            batch_regularization=batch_regularization,
+            mixup=mixup_enabled,
+            mixup_alpha=args.mixup_alpha if mixup_enabled else 0.0,
+            cutmix=cutmix_enabled,
+            cutmix_alpha=args.cutmix_alpha if cutmix_enabled else 0.0,
             evaluation_policy=RunEvaluationPolicy(
                 headline=HEADLINE_EVAL_POLICY,
                 train_includes_trusted_synthetic=True,
@@ -351,6 +390,9 @@ def init_wandb(
     run_dir: Path,
     head_warmup_epochs: int,
     head_learning_rate: float,
+    batch_regularization: str,
+    mixup_enabled: bool,
+    cutmix_enabled: bool,
 ) -> wandb.sdk.wandb_run.Run | None:
     if args.no_wandb:
         print("[wandb] disabled via --no-wandb", flush=True)
@@ -375,6 +417,11 @@ def init_wandb(
         "learning_rate": args.learning_rate,
         "label_smoothing": args.label_smoothing,
         "augment": args.augment == "on",
+        "batch_regularization": batch_regularization,
+        "mixup": mixup_enabled,
+        "mixup_alpha": args.mixup_alpha if mixup_enabled else 0.0,
+        "cutmix": cutmix_enabled,
+        "cutmix_alpha": args.cutmix_alpha if cutmix_enabled else 0.0,
         "weight_decay": args.weight_decay,
         "patience": args.patience,
         "precision_floor": args.precision_floor,
@@ -417,6 +464,8 @@ def init_wandb(
 def choose_device(force_cpu: bool) -> torch.device:
     if force_cpu:
         return torch.device("cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
@@ -516,6 +565,209 @@ def set_backbone_batchnorm_mode(model: nn.Module, *, frozen: bool) -> None:
             module.eval() if frozen else module.train()
 
 
+def mixup_is_enabled(mixup_mode: str, mixup_alpha: float) -> bool:
+    return mixup_mode == "on" and mixup_alpha > 0.0
+
+
+def cutmix_is_enabled(cutmix_mode: str, cutmix_alpha: float) -> bool:
+    return cutmix_mode == "on" and cutmix_alpha > 0.0
+
+
+def resolve_batch_regularization(mixup_enabled: bool, cutmix_enabled: bool) -> str:
+    if cutmix_enabled:
+        return "cutmix"
+    if mixup_enabled:
+        return "mixup"
+    return "off"
+
+
+def identity_regularized_batch(
+    inputs: torch.Tensor,
+    labels: torch.Tensor,
+    sample_weights: torch.Tensor,
+) -> RegularizedBatch:
+    return RegularizedBatch(
+        inputs=inputs,
+        primary_labels=labels,
+        secondary_labels=labels,
+        primary_contributions=sample_weights,
+        secondary_contributions=torch.zeros_like(sample_weights),
+        lambda_value=1.0,
+        effective_primary_ratio=1.0,
+        method="off",
+        active=False,
+    )
+
+
+def weighted_pair_contributions(
+    primary_sample_weights: torch.Tensor,
+    secondary_sample_weights: torch.Tensor,
+    lambda_value: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    primary_contributions = lambda_value * primary_sample_weights
+    secondary_contributions = (1.0 - lambda_value) * secondary_sample_weights
+    total_contributions = primary_contributions + secondary_contributions
+    safe_total = total_contributions.clamp_min(1e-8)
+    primary_ratio = torch.where(
+        total_contributions > 0,
+        primary_contributions / safe_total,
+        torch.ones_like(total_contributions),
+    )
+    secondary_ratio = torch.where(
+        total_contributions > 0,
+        secondary_contributions / safe_total,
+        torch.zeros_like(total_contributions),
+    )
+    return primary_contributions, secondary_contributions, total_contributions, primary_ratio, secondary_ratio
+
+
+def create_mixup_batch(
+    inputs: torch.Tensor,
+    labels: torch.Tensor,
+    sample_weights: torch.Tensor,
+    mixup_alpha: float,
+) -> RegularizedBatch:
+    if mixup_alpha <= 0.0 or inputs.size(0) < 2:
+        return identity_regularized_batch(inputs, labels, sample_weights)
+    lambda_value = float(np.random.beta(mixup_alpha, mixup_alpha))
+    permutation = torch.randperm(inputs.size(0), device=inputs.device)
+    secondary_weights = sample_weights[permutation]
+    primary_contributions, secondary_contributions, _, primary_ratio, secondary_ratio = weighted_pair_contributions(
+        sample_weights,
+        secondary_weights,
+        lambda_value,
+    )
+    broadcast_shape = (inputs.size(0),) + (1,) * (inputs.ndim - 1)
+    mixed_inputs = (primary_ratio.view(broadcast_shape) * inputs) + (secondary_ratio.view(broadcast_shape) * inputs[permutation])
+    return RegularizedBatch(
+        inputs=mixed_inputs,
+        primary_labels=labels,
+        secondary_labels=labels[permutation],
+        primary_contributions=primary_contributions,
+        secondary_contributions=secondary_contributions,
+        lambda_value=lambda_value,
+        effective_primary_ratio=float(primary_ratio.mean().item()),
+        method="mixup",
+        active=bool(torch.any(secondary_contributions > 0).item()),
+    )
+
+
+def sample_cutmix_box(height: int, width: int, secondary_ratio: float) -> tuple[int, int, int, int]:
+    clamped_ratio = min(1.0, max(0.0, secondary_ratio))
+    if clamped_ratio <= 0.0:
+        return 0, 0, 0, 0
+    if clamped_ratio >= 1.0:
+        return 0, 0, width, height
+    cut_ratio = math.sqrt(clamped_ratio)
+    cut_width = int(round(width * cut_ratio))
+    cut_height = int(round(height * cut_ratio))
+    if cut_width <= 0 or cut_height <= 0:
+        return 0, 0, 0, 0
+    center_x = random.randrange(width)
+    center_y = random.randrange(height)
+    left = max(0, center_x - (cut_width // 2))
+    right = min(width, center_x + (cut_width - (cut_width // 2)))
+    top = max(0, center_y - (cut_height // 2))
+    bottom = min(height, center_y + (cut_height - (cut_height // 2)))
+    return left, top, right, bottom
+
+
+def build_cutmix_pair_permutation(batch_size: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    order = torch.randperm(batch_size, device=device)
+    permutation = torch.arange(batch_size, device=device)
+    for start in range(0, batch_size - 1, 2):
+        left_index = int(order[start].item())
+        right_index = int(order[start + 1].item())
+        permutation[left_index] = right_index
+        permutation[right_index] = left_index
+    return permutation, order
+
+
+def shared_cutmix_secondary_ratio(
+    primary_weight: torch.Tensor,
+    secondary_weight: torch.Tensor,
+    lambda_value: float,
+) -> float:
+    # Use one reciprocal area for the whole swap pair so each sample keeps its original
+    # total loss weight across its primary and secondary appearances.
+    pair_primary = torch.stack((primary_weight, secondary_weight))
+    pair_secondary = torch.stack((secondary_weight, primary_weight))
+    _, _, _, _, secondary_ratios = weighted_pair_contributions(pair_primary, pair_secondary, lambda_value)
+    return float(torch.min(secondary_ratios).item())
+
+
+def create_cutmix_batch(
+    inputs: torch.Tensor,
+    labels: torch.Tensor,
+    sample_weights: torch.Tensor,
+    cutmix_alpha: float,
+) -> RegularizedBatch:
+    if cutmix_alpha <= 0.0 or inputs.size(0) < 2:
+        return identity_regularized_batch(inputs, labels, sample_weights)
+    if inputs.ndim != 4:
+        raise ValueError(f"CutMix expects 4D image tensors, got shape {tuple(inputs.shape)}")
+    lambda_value = float(np.random.beta(cutmix_alpha, cutmix_alpha))
+    permutation, order = build_cutmix_pair_permutation(inputs.size(0), inputs.device)
+    mixed_inputs = inputs.clone()
+    primary_contributions = sample_weights.clone()
+    secondary_contributions = torch.zeros_like(sample_weights)
+    _, _, height, width = inputs.shape
+    total_area = float(height * width)
+    for start in range(0, inputs.size(0) - 1, 2):
+        left_index = int(order[start].item())
+        right_index = int(order[start + 1].item())
+        pair_secondary_ratio = shared_cutmix_secondary_ratio(
+            sample_weights[left_index],
+            sample_weights[right_index],
+            lambda_value,
+        )
+        left, top, right, bottom = sample_cutmix_box(height, width, pair_secondary_ratio)
+        if left == right or top == bottom:
+            continue
+        actual_secondary_ratio = ((right - left) * (bottom - top)) / total_area
+        mixed_inputs[left_index, :, top:bottom, left:right] = inputs[right_index, :, top:bottom, left:right]
+        mixed_inputs[right_index, :, top:bottom, left:right] = inputs[left_index, :, top:bottom, left:right]
+        primary_contributions[left_index] = (1.0 - actual_secondary_ratio) * sample_weights[left_index]
+        primary_contributions[right_index] = (1.0 - actual_secondary_ratio) * sample_weights[right_index]
+        secondary_contributions[left_index] = actual_secondary_ratio * sample_weights[right_index]
+        secondary_contributions[right_index] = actual_secondary_ratio * sample_weights[left_index]
+    return RegularizedBatch(
+        inputs=mixed_inputs,
+        primary_labels=labels,
+        secondary_labels=labels[permutation],
+        primary_contributions=primary_contributions,
+        secondary_contributions=secondary_contributions,
+        lambda_value=lambda_value,
+        effective_primary_ratio=float(
+            (primary_contributions / (primary_contributions + secondary_contributions).clamp_min(1e-8)).mean().item()
+        ),
+        method="cutmix",
+        active=bool(torch.any(secondary_contributions > 0).item()),
+    )
+
+
+def create_regularized_batch(
+    inputs: torch.Tensor,
+    labels: torch.Tensor,
+    sample_weights: torch.Tensor,
+    batch_regularization: str,
+    batch_regularization_alpha: float,
+) -> RegularizedBatch:
+    if batch_regularization == "mixup":
+        return create_mixup_batch(inputs, labels, sample_weights, batch_regularization_alpha)
+    if batch_regularization == "cutmix":
+        return create_cutmix_batch(inputs, labels, sample_weights, batch_regularization_alpha)
+    return identity_regularized_batch(inputs, labels, sample_weights)
+
+
+def compute_regularized_loss(criterion: nn.Module, logits: torch.Tensor, batch: RegularizedBatch) -> torch.Tensor:
+    primary_loss = criterion(logits, batch.primary_labels)
+    secondary_loss = criterion(logits, batch.secondary_labels)
+    weighted_loss = (primary_loss * batch.primary_contributions) + (secondary_loss * batch.secondary_contributions)
+    total_weight = (batch.primary_contributions + batch.secondary_contributions).sum().clamp_min(1e-8)
+    return weighted_loss.sum() / total_weight
+
+
 def run_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -529,6 +781,8 @@ def run_epoch(
     global_step_base: int,
     scheduler,
     phase: str,
+    batch_regularization: str,
+    batch_regularization_alpha: float,
 ) -> tuple[float, int]:
     model.train()
     set_backbone_batchnorm_mode(model, frozen=phase == "warmup")
@@ -540,16 +794,22 @@ def run_epoch(
         inputs = inputs.to(device)
         labels = labels.to(device)
         sample_weights = sample_weights.to(device=device, dtype=torch.float32)
+        batch = create_regularized_batch(
+            inputs,
+            labels,
+            sample_weights,
+            batch_regularization,
+            batch_regularization_alpha,
+        )
         optimizer.zero_grad(set_to_none=True)
-        logits = model(inputs)
-        loss_values = criterion(logits, labels)
-        loss = (loss_values * sample_weights).sum() / sample_weights.sum().clamp_min(1e-8)
+        logits = model(batch.inputs)
+        loss = compute_regularized_loss(criterion, logits, batch)
         loss.backward()
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
-        total_loss += float(loss.item()) * inputs.size(0)
-        total_items += inputs.size(0)
+        total_loss += float(loss.item()) * batch.inputs.size(0)
+        total_items += batch.inputs.size(0)
         if should_log_batch(batch_index, total_batches, log_every):
             average_loss = total_loss / max(1, total_items)
             elapsed_seconds = perf_counter() - epoch_started_at
@@ -571,6 +831,10 @@ def run_epoch(
                         "train/batch_loss": float(loss.item()),
                         "train/batch_avg_loss": average_loss,
                         "train/lr": current_learning_rate(optimizer),
+                        "train/mixup_applied": 1 if batch.method == "mixup" else 0,
+                        "train/cutmix_applied": 1 if batch.method == "cutmix" else 0,
+                        "train/batch_regularization_lambda": batch.lambda_value,
+                        "train/batch_regularization_primary_ratio": batch.effective_primary_ratio,
                         "timing/batch_elapsed_seconds": elapsed_seconds,
                         "timing/epoch_eta_seconds": epoch_eta_seconds,
                     }
@@ -606,6 +870,8 @@ def print_run_header(
     head_warmup_epochs: int,
     head_learning_rate: float,
     finetune_epochs: int,
+    batch_regularization: str,
+    batch_regularization_alpha: float,
 ) -> None:
     positives = sum(1 for entry in train_entries if entry.label == "milady")
     negatives = len(train_entries) - positives
@@ -615,7 +881,9 @@ def print_run_header(
         f"weight_decay={args.weight_decay:g} patience={args.patience} precision_floor={args.precision_floor:.4f} "
         f"seed={args.seed} "
         f"warmup_epochs={head_warmup_epochs} head_lr={head_learning_rate:g} "
-        f"scheduler={args.scheduler} label_smoothing={args.label_smoothing:g} augment={args.augment}",
+        f"scheduler={args.scheduler} label_smoothing={args.label_smoothing:g} augment={args.augment} "
+        f"batch_regularization={batch_regularization} batch_regularization_alpha={batch_regularization_alpha:g} "
+        f"mixup={'on' if batch_regularization == 'mixup' else 'off'} cutmix={'on' if batch_regularization == 'cutmix' else 'off'}",
         flush=True,
     )
     print(

@@ -253,6 +253,11 @@ class RunSummary(msgspec.Struct, omit_defaults=True, kw_only=True):
     learning_rate: float = 0.0
     label_smoothing: float = 0.0
     augment: bool = False
+    batch_regularization: str = "off"
+    mixup: bool = False
+    mixup_alpha: float = 0.0
+    cutmix: bool = False
+    cutmix_alpha: float = 0.0
     evaluation_policy: RunEvaluationPolicy = msgspec.field(default_factory=RunEvaluationPolicy)
     dataset_splits: dict[str, RunDatasetSplitSummary] = msgspec.field(default_factory=dict)
     best_epoch: int
